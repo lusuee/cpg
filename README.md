@@ -44,13 +44,24 @@ pnpm db:migrate:local
 
 登录管理端至少需要两个 Secret：`ADMIN_SECRET`（登录密码）和 `SESSION_SECRET`（会话签名密钥）。
 
-## 配置 Secrets
+## 配置 Secrets（部署时统一从 deploy.env 读取）
 
-```bash
-npx wrangler secret put ADMIN_SECRET      # 管理端登录密码
-npx wrangler secret put SESSION_SECRET    # 会话 HMAC 密钥，请用随机长字符串
-npx wrangler secret put OPENAI_API_KEY    # 若使用 OpenAI/SDK 兼容 provider
-npx wrangler secret put ANTHROPIC_API_KEY # 若使用 Anthropic provider
+把 `deploy.env.example` 复制为 `deploy.env`（已在 `.gitignore` 中，不会提交），按需填写：
+
+```ini
+# D1：在 Cloudflare 后台创建数据库后，把 id 填到这一项
+D1_DATABASE_ID=
+
+# 管理端登录密码与会话签名密钥（必须）
+ADMIN_SECRET=change-me
+SESSION_SECRET=generate-a-long-random-string
+
+# 展示在 Dashboard 的网关地址
+GATEWAY_BASE_URL=https://ai.example.com
+
+# 上游 Provider Key，按需填写
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 - Provider 表中的 `secret_name` 必须对应 Worker 环境变量/Secret 名称（例如 `OPENAI_API_KEY`）。
@@ -58,23 +69,36 @@ npx wrangler secret put ANTHROPIC_API_KEY # 若使用 Anthropic provider
 
 ## 创建 D1 并部署
 
+### 一键部署到 Cloudflare
+
 ```bash
-# 1. 创建数据库（首次）
-npx wrangler d1 create personal-ai-gateway
+# 1. 复制部署配置
+cp deploy.env.example deploy.env
 
-# 2. 把返回的 database_id 填入 worker/wrangler.toml
-#    [[d1_databases]]
-#    database_name = "personal-ai-gateway"
-#    database_id = "<复制的 ID>"
+# 2. 在 Cloudflare 后台创建数据库 personal-ai-gateway，
+#    把返回的 database_id 填到 deploy.env 的 D1_DATABASE_ID
 
-# 3. 应用迁移到远程库
-npx wrangler d1 migrations apply personal-ai-gateway --remote
-
-# 4. 设置 Secrets 后构建并部署
+# 3. 一键部署（自动：build web → 注入 D1 id/vars → 远程迁移 → 上传 Secrets → wrangler deploy）
 pnpm deploy
 ```
 
-部署结束后，把 `worker/wrangler.toml` 中的 `GATEWAY_BASE_URL` 改成你的真实域名（或通过 Dashboard 显示用途），例如 `https://ai.example.com`。
+部署脚本会从 `deploy.env`（或真实环境变量）读取：
+
+- `D1_DATABASE_ID`：自动写入 `worker/wrangler.toml`，不用在 git 里写死数据库 id。
+- `GATEWAY_BASE_URL` / `APP_NAME`：自动写入 `wrangler.toml` 的 `[vars]`。
+- `ADMIN_SECRET` / `SESSION_SECRET` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`：自动执行 `wrangler secret put`。
+
+只想直接部署 Worker、不跑构建/配置/迁移时：
+
+```bash
+pnpm deploy:worker
+```
+
+单独执行远程迁移：
+
+```bash
+pnpm db:migrate:remote
+```
 
 ## 常用脚本
 
@@ -86,8 +110,10 @@ pnpm deploy
 | `pnpm build:web` | 构建 Dashboard 到 `web/dist` |
 | `pnpm typecheck` | 全部 TypeScript 类型检查 |
 | `pnpm test` | Worker vitest 单元测试 |
-| `pnpm deploy` | 构建前端并由 Wrangler 部署 Worker |
-| `pnpm db:migrate:local` | 本地 D1 迁移 |
+| `pnpm deploy` | 一键部署：build web、注入 D1 id/vars、远程迁移、上传 Secrets、部署 Worker |
+| pnpm db:migrate:local | 本地 D1 迁移 |
+| pnpm db:migrate:remote | 远程 D1 迁移 |
+| pnpm deploy:worker | 仅部署 Worker（跳过构建/配置/迁移） |
 
 ## 管理 API
 
@@ -179,3 +205,4 @@ const res = await client.messages.create({
 - Gateway 请求体只被读取一次用于解析 `model`/`stream`，不持久化 prompt/response。
 - 流式响应使用 TransformStream 透传，仅保留尾部约 16KB 用于流结束后解析 usage。
 - V1 不包含多用户、fallback、限流、费用估算与 Gemini/Responses 协议，后续版本可扩展。
+

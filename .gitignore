@@ -11,3 +11,6 @@ worker/.dev.vars
 web/dist/
 
 .pnpm-store/
+
+deploy.env
+.env

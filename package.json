@@ -8,10 +8,12 @@
     "dev:worker": "pnpm --filter @aigw/worker dev",
     "dev:web": "pnpm --filter @aigw/web dev",
     "dev": "pnpm run build:web && pnpm run dev:worker",
-    "deploy": "pnpm run build:web && pnpm --filter @aigw/worker deploy",
+    "deploy": "node scripts/deploy.mjs",
     "test": "pnpm --filter @aigw/worker test",
     "typecheck": "pnpm --filter @aigw/worker typecheck && pnpm --filter @aigw/web typecheck",
-    "db:migrate:local": "pnpm --filter @aigw/worker db:migrate:local"
+    "db:migrate:local": "pnpm --filter @aigw/worker db:migrate:local",
+    "deploy:worker": "pnpm --filter @aigw/worker deploy",
+    "db:migrate:remote": "pnpm --filter @aigw/worker db:migrate:remote"
   },
   "devDependencies": {
     "typescript": "^5.6.2"

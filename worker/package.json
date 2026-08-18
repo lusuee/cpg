@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate:local": "wrangler d1 migrations apply personal-ai-gateway --local"
+    "db:migrate:local": "wrangler d1 migrations apply personal-ai-gateway --local",
+    "db:migrate:remote": "wrangler d1 migrations apply personal-ai-gateway --remote"
   },
   "dependencies": {
     "hono": "^4.6.14"
