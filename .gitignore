@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.dev.vars
+.wrangler/
+*.log
+.DS_Store
+.idea/
+.vscode/
+worker/.wrangler/
+worker/.dev.vars
+web/dist/
+
+.pnpm-store/

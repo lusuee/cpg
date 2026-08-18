@@ -1,0 +1,52 @@
+import { Hono } from "hono";
+import type { Env } from "../types";
+import { createModel, deleteModel, listModels, updateModel, getProvider } from "../db/repo";
+
+export const modelsApp = new Hono<{ Bindings: Env }>();
+
+modelsApp.get("/", async (c) => {
+  const items = await listModels(c.env);
+  return c.json({ items });
+});
+
+modelsApp.post("/", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (!body.model_name || typeof body.model_name !== "string") return c.json({ error: "model_name is required" }, 400);
+  if (!body.provider_id || typeof body.provider_id !== "string") return c.json({ error: "provider_id is required" }, 400);
+  const provider = await getProvider(c.env, body.provider_id);
+  if (!provider) return c.json({ error: "provider_not_found" }, 400);
+  const row = await createModel(c.env, {
+    provider_id: body.provider_id,
+    model_name: body.model_name,
+    display_name: typeof body.display_name === "string" ? body.display_name : undefined,
+    alias: typeof body.alias === "string" ? body.alias : undefined,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : true,
+    config_json: typeof body.config_json === "string" ? body.config_json : undefined,
+  });
+  return c.json({ item: row }, 201);
+});
+
+modelsApp.put("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  if (body.provider_id && typeof body.provider_id === "string") {
+    const provider = await getProvider(c.env, body.provider_id);
+    if (!provider) return c.json({ error: "provider_not_found" }, 400);
+  }
+  const row = await updateModel(c.env, id, {
+    provider_id: typeof body.provider_id === "string" ? body.provider_id : undefined,
+    model_name: typeof body.model_name === "string" ? body.model_name : undefined,
+    display_name: "display_name" in body ? (body.display_name ?? null) : undefined,
+    alias: "alias" in body ? (body.alias ?? null) : undefined,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+    config_json: "config_json" in body ? (body.config_json ?? null) : undefined,
+  });
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json({ item: row });
+});
+
+modelsApp.delete("/:id", async (c) => {
+  const ok = await deleteModel(c.env, c.req.param("id"));
+  if (!ok) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
