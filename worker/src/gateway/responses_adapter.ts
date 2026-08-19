@@ -84,8 +84,63 @@ export function createChatToResponsesTransform(
   let started = false;
 
   function sendEvent(controller: TransformStreamDefaultController<Uint8Array>, event: string, data: any) {
-    const s = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const payload = { type: event, ...data };
+    const s = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
     controller.enqueue(encoder.encode(s));
+  }
+
+  function processLine(controller: TransformStreamDefaultController<Uint8Array>, line: string) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.startsWith("data:")) return;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+
+    try {
+      const parsed = JSON.parse(payload);
+      if (!started) {
+        started = true;
+        sendEvent(controller, "response.created", {
+          response: {
+            id: responseId,
+            object: "response",
+            status: "in_progress",
+            model: modelName,
+          },
+        });
+        sendEvent(controller, "response.output_item.added", {
+          response_id: responseId,
+          output_index: 0,
+          item: {
+            id: `msg_${responseId}`,
+            type: "message",
+            status: "in_progress",
+            role: "assistant",
+            content: [],
+          },
+        });
+        sendEvent(controller, "response.content_part.added", {
+          response_id: responseId,
+          item_id: `msg_${responseId}`,
+          output_index: 0,
+          content_index: 0,
+          part: { type: "text", text: "" },
+        });
+      }
+
+      const delta = parsed.choices?.[0]?.delta?.content || "";
+      if (delta) {
+        fullContent += delta;
+        sendEvent(controller, "response.output_text.delta", {
+          response_id: responseId,
+          item_id: `msg_${responseId}`,
+          output_index: 0,
+          content_index: 0,
+          delta,
+        });
+      }
+    } catch {
+      // ignore parse errors on fragmented chunks
+    }
   }
 
   return new TransformStream<Uint8Array, Uint8Array>({
@@ -95,61 +150,16 @@ export function createChatToResponsesTransform(
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(payload);
-          if (!started) {
-            started = true;
-            sendEvent(controller, "response.created", {
-              response: {
-                id: responseId,
-                object: "response",
-                status: "in_progress",
-                model: modelName,
-              },
-            });
-            sendEvent(controller, "response.output_item.added", {
-              response_id: responseId,
-              output_index: 0,
-              item: {
-                id: `msg_${responseId}`,
-                type: "message",
-                status: "in_progress",
-                role: "assistant",
-                content: [],
-              },
-            });
-            sendEvent(controller, "response.content_part.added", {
-              response_id: responseId,
-              item_id: `msg_${responseId}`,
-              output_index: 0,
-              content_index: 0,
-              part: { type: "text", text: "" },
-            });
-          }
-
-          const delta = parsed.choices?.[0]?.delta?.content || "";
-          if (delta) {
-            fullContent += delta;
-            sendEvent(controller, "response.output_text.delta", {
-              response_id: responseId,
-              item_id: `msg_${responseId}`,
-              output_index: 0,
-              content_index: 0,
-              delta,
-            });
-          }
-        } catch {
-          // ignore parse errors on fragmented chunks
-        }
+        processLine(controller, line);
       }
     },
     flush(controller) {
+      if (buffer.trim()) {
+        processLine(controller, buffer);
+      }
+
       if (!started) {
+        started = true;
         sendEvent(controller, "response.created", {
           response: {
             id: responseId,
@@ -158,7 +168,34 @@ export function createChatToResponsesTransform(
             model: modelName,
           },
         });
+        sendEvent(controller, "response.output_item.added", {
+          response_id: responseId,
+          output_index: 0,
+          item: {
+            id: `msg_${responseId}`,
+            type: "message",
+            status: "in_progress",
+            role: "assistant",
+            content: [],
+          },
+        });
+        sendEvent(controller, "response.content_part.added", {
+          response_id: responseId,
+          item_id: `msg_${responseId}`,
+          output_index: 0,
+          content_index: 0,
+          part: { type: "text", text: "" },
+        });
       }
+
+      sendEvent(controller, "response.output_text.done", {
+        response_id: responseId,
+        item_id: `msg_${responseId}`,
+        output_index: 0,
+        content_index: 0,
+        text: fullContent,
+      });
+
       sendEvent(controller, "response.content_part.done", {
         response_id: responseId,
         item_id: `msg_${responseId}`,
@@ -166,6 +203,7 @@ export function createChatToResponsesTransform(
         content_index: 0,
         part: { type: "text", text: fullContent },
       });
+
       sendEvent(controller, "response.output_item.done", {
         response_id: responseId,
         output_index: 0,
@@ -177,14 +215,41 @@ export function createChatToResponsesTransform(
           content: [{ type: "text", text: fullContent }],
         },
       });
+
+      const finalOutputItem = {
+        id: `msg_${responseId}`,
+        type: "message",
+        status: "completed",
+        role: "assistant",
+        content: [{ type: "text", text: fullContent }],
+      };
+
       sendEvent(controller, "response.completed", {
         response: {
           id: responseId,
           object: "response",
           status: "completed",
           model: modelName,
+          output: [finalOutputItem],
+          usage: {
+            input_tokens: 0,
+            output_tokens: Math.ceil(fullContent.length / 4),
+            total_tokens: Math.ceil(fullContent.length / 4),
+          },
         },
       });
+
+      sendEvent(controller, "response.done", {
+        response: {
+          id: responseId,
+          object: "response",
+          status: "completed",
+          model: modelName,
+          output: [finalOutputItem],
+        },
+      });
+
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       if (onFinish) onFinish(fullContent);
     },
   });
