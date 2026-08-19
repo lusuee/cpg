@@ -225,13 +225,32 @@ export async function deleteModel(env: Env, id: string): Promise<boolean> {
   return res.meta.changes > 0;
 }
 
-export async function batchUpdateModels(env: Env, ids: string[], data: { enabled?: boolean }): Promise<number> {
+export async function batchUpdateModels(
+  env: Env,
+  ids: string[],
+  data: { enabled?: boolean; cache_enabled?: boolean; cache_ttl?: number }
+): Promise<number> {
   if (!ids.length) return 0;
   await ensureSchema(env);
+  const sets: string[] = ["updated_at = ?"];
+  const binds: any[] = [now()];
+
+  if (data.enabled !== undefined) {
+    sets.push("enabled = ?");
+    binds.push(data.enabled ? 1 : 0);
+  }
+  if (data.cache_enabled !== undefined) {
+    sets.push("cache_enabled = ?");
+    binds.push(data.cache_enabled ? 1 : 0);
+  }
+  if (data.cache_ttl !== undefined) {
+    sets.push("cache_ttl = ?");
+    binds.push(data.cache_ttl);
+  }
+
   const placeholders = ids.map(() => "?").join(",");
-  const res = await env.DB.prepare(
-    `UPDATE models SET enabled = ?, updated_at = ? WHERE id IN (${placeholders})`
-  ).bind(data.enabled ? 1 : 0, now(), ...ids).run();
+  const sql = `UPDATE models SET ${sets.join(", ")} WHERE id IN (${placeholders})`;
+  const res = await env.DB.prepare(sql).bind(...binds, ...ids).run();
   return res.meta.changes;
 }
 

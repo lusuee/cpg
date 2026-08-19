@@ -97,6 +97,8 @@ export const BatchCreateModelsSchema = z.object({
 export const BatchUpdateModelsSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "ids 列表不能为空"),
   enabled: z.boolean().optional(),
+  cache_enabled: z.boolean().optional(),
+  cache_ttl: z.number().min(60).optional(),
 });
 
 export const BatchDeleteModelsSchema = z.object({

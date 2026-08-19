@@ -109,6 +109,29 @@ function normalizeMessages(messages: any): any {
   });
 }
 
+function normalizeInput(input: any): any {
+  if (!input) return undefined;
+  if (typeof input === "string") return input.trim();
+  if (Array.isArray(input)) {
+    return input.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        return {
+          type: item.type,
+          role: item.role,
+          content: item.content,
+          text: item.text,
+          name: item.name,
+          arguments: item.arguments,
+          output: item.output,
+        };
+      }
+      return item;
+    });
+  }
+  return input;
+}
+
 export async function computeCacheKey(
   kind: "messages" | "chat/completions" | "responses",
   modelName: string,
@@ -119,6 +142,8 @@ export async function computeCacheKey(
     model: modelName,
     messages: normalizeMessages(body.messages),
     system: typeof body.system === "string" ? body.system.trim() : body.system,
+    instructions: typeof body.instructions === "string" ? body.instructions.trim() : body.instructions,
+    input: normalizeInput(body.input),
     prompt: typeof body.prompt === "string" ? body.prompt.trim() : body.prompt,
     contents: body.contents,
     temperature: typeof body.temperature === "number" ? body.temperature : 1.0,

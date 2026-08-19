@@ -80,6 +80,8 @@ modelsApp.post("/batch", zValidator("json", BatchCreateModelsSchema), async (c) 
       model_name: name.trim(),
       display_name: typeof m === "object" && m.display_name ? m.display_name.trim() : undefined,
       alias: typeof m === "object" && m.alias ? m.alias.trim() : undefined,
+      cache_enabled: true,
+      cache_ttl: 3600,
       enabled: true,
     });
     created.push(row);
@@ -89,7 +91,11 @@ modelsApp.post("/batch", zValidator("json", BatchCreateModelsSchema), async (c) 
 
 modelsApp.post("/batch-update", zValidator("json", BatchUpdateModelsSchema), async (c) => {
   const data = c.req.valid("json");
-  const count = await batchUpdateModels(c.env, data.ids, { enabled: data.enabled });
+  const count = await batchUpdateModels(c.env, data.ids, {
+    enabled: data.enabled,
+    cache_enabled: data.cache_enabled,
+    cache_ttl: data.cache_ttl,
+  });
   return c.json({ updated: count });
 });
 

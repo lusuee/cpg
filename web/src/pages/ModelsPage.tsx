@@ -88,7 +88,7 @@ export default function ModelsPage() {
       fallback_model_id: "",
       input_price_per_m: "",
       output_price_per_m: "",
-      cache_enabled: false,
+      cache_enabled: true,
       cache_ttl: "3600",
       enabled: true,
       config_json: "",
@@ -209,6 +209,19 @@ export default function ModelsPage() {
     }
   }
 
+  async function onToggleCache(m: ModelItem) {
+    try {
+      await api.put(`/api/models/${m.id}`, {
+        cache_enabled: !m.cache_enabled,
+        cache_ttl: m.cache_ttl || 3600,
+      });
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "操作失败");
+    }
+  }
+
   // Batch actions
   async function handleBatchEnable(enabled: boolean) {
     if (!selectedIds.size) return;
@@ -223,6 +236,25 @@ export default function ModelsPage() {
       await refresh();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "批量更新失败");
+    } finally {
+      setBatchOperating(false);
+    }
+  }
+
+  async function handleBatchCache(enabled: boolean) {
+    if (!selectedIds.size) return;
+    setBatchOperating(true);
+    try {
+      await api.post("/api/models/batch-update", {
+        ids: Array.from(selectedIds),
+        cache_enabled: enabled,
+        cache_ttl: 3600,
+      });
+      setSelectedIds(new Set());
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "批量更新缓存失败");
     } finally {
       setBatchOperating(false);
     }
@@ -496,6 +528,25 @@ wire_specification = "openai"
               size="sm"
               variant="outline"
               disabled={batchOperating}
+              onClick={() => handleBatchCache(true)}
+              className="bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-purple-300 dark:border-purple-700 shadow-none"
+            >
+              <IconZap />
+              <span>开启缓存</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={() => handleBatchCache(false)}
+              className="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
+            >
+              <span>关闭缓存</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
               onClick={handleBatchDelete}
               className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
             >
@@ -531,7 +582,7 @@ wire_specification = "openai"
                 <th className="pb-3 px-2">绑定 Provider</th>
                 <th className="pb-3 px-2">1M 定价 (入/出)</th>
                 <th className="pb-3 px-2">故障备用</th>
-                <th className="pb-3 px-2">KV 缓存</th>
+                <th className="pb-3 px-2">响应缓存</th>
                 <th className="pb-3 px-2">状态</th>
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
@@ -580,13 +631,22 @@ wire_specification = "openai"
                       )}
                     </td>
                     <td className="py-3 px-2">
-                      {m.cache_enabled ? (
-                        <Badge tone="purple" title={`响应缓存已开启，过期时间 ${m.cache_ttl || 3600} 秒`}>
-                          ⚡ {m.cache_ttl || 3600}s
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500 text-xs">-</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => onToggleCache(m)}
+                        title="点击快速切换该模型的响应缓存"
+                        className="cursor-pointer group"
+                      >
+                        {m.cache_enabled ? (
+                          <Badge tone="purple" className="group-hover:opacity-80 transition-opacity" title="响应缓存已开启，点击可关闭">
+                            ⚡ {m.cache_ttl || 3600}s
+                          </Badge>
+                        ) : (
+                          <Badge tone="slate" className="group-hover:opacity-80 transition-opacity" title="响应缓存未开启，点击可开启">
+                            未开启
+                          </Badge>
+                        )}
+                      </button>
                     </td>
                     <td className="py-3 px-2">
                       <button
