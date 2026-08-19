@@ -32,6 +32,11 @@ app.all("*", async (c) => {
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 
+app.onError((err, c) => {
+  console.error("Worker unhandled error:", err);
+  return c.json({ error: err.message || "internal_server_error" }, 500);
+});
+
 export default {
   fetch: app.fetch,
 };
