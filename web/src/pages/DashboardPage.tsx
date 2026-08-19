@@ -64,12 +64,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="今日总请求"
           value={fmtNum(t.request_count)}
-          sub={t.cache_hit_count ? `缓存命中 ${t.cache_hit_count} 次` : `错误率 ${t.request_count ? ((t.error_count / t.request_count) * 100).toFixed(1) : 0}%`}
+          sub={`错误率 ${t.request_count ? ((t.error_count / t.request_count) * 100).toFixed(1) : 0}%`}
           tone="blue"
+        />
+        <StatCard
+          label="缓存命中率"
+          value={t.request_count ? `${(((t.cache_hit_count || 0) / t.request_count) * 100).toFixed(1)}%` : "0.0%"}
+          sub={t.cache_hit_count ? `命中 ${fmtNum(t.cache_hit_count)} 次 (极速响应)` : "暂无命中"}
+          tone="purple"
         />
         <StatCard
           label="今日输入 Token"
@@ -87,7 +93,7 @@ export default function DashboardPage() {
           label="今日预估费用"
           value={t.cost_usd ? `$${t.cost_usd.toFixed(4)}` : "$0.0000"}
           sub="按模型定价估算"
-          tone="purple"
+          tone="slate"
         />
         <StatCard
           label="今日异常请求"

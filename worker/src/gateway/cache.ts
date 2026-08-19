@@ -32,27 +32,20 @@ export class L1MemoryCache {
       this.cache.delete(key);
       return null;
     }
-    entry.lastAccessed = Date.now();
+    // Refresh LRU order
+    this.cache.delete(key);
+    this.cache.set(key, entry);
     return entry.payload;
   }
 
   set(key: string, payload: CachePayload, ttlSeconds: number): void {
-    if (this.cache.size >= this.maxEntries) {
-      let oldestKey: string | null = null;
-      let oldestTime = Infinity;
-      const now = Date.now();
-
-      for (const [k, v] of this.cache.entries()) {
-        if (now > v.expiresAt) {
-          oldestKey = k;
-          break;
-        }
-        if (v.lastAccessed < oldestTime) {
-          oldestTime = v.lastAccessed;
-          oldestKey = k;
-        }
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
       }
-      if (oldestKey) this.cache.delete(oldestKey);
     }
 
     this.cache.set(key, {
