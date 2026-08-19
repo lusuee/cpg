@@ -146,8 +146,9 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
       redirect: "follow",
     });
 
-    if (upstreamRes.status === 404 || upstreamRes.status === 405) {
-      // Fallback: convert to /chat/completions
+    // If upstream /responses returns any error (e.g. 404, 405, 422 schema mismatch, 501, 400),
+    // automatically fallback to standard /chat/completions and adapt the protocol stream/json.
+    if (!upstreamRes.ok) {
       target = buildTargetUrl(row, "chat/completions");
       const chatBody = convertResponsesRequest(body);
       upstreamRes = await fetch(target, {

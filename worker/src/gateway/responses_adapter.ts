@@ -1,5 +1,5 @@
 export function convertResponsesRequest(body: any): any {
-  const newBody = { ...body };
+  const newBody: Record<string, any> = { ...body };
   if (!newBody.messages) {
     const messages: Array<{ role: string; content: any }> = [];
     if (newBody.instructions && typeof newBody.instructions === "string") {
@@ -12,21 +12,37 @@ export function convertResponsesRequest(body: any): any {
         if (typeof item === "string") {
           messages.push({ role: "user", content: item });
         } else if (item && typeof item === "object") {
-          const role = item.role || (item.type === "message" ? "user" : "user");
-          let content = item.content || item.text || "";
-          if (Array.isArray(content)) {
-            content = content
-              .map((c) => (typeof c === "string" ? c : c.text || JSON.stringify(c)))
-              .join("\n");
+          let role = item.role;
+          if (!role) {
+            role = item.type === "message" ? (item.role || "user") : "user";
           }
-          messages.push({ role, content });
+          let content = item.content ?? item.text ?? "";
+          if (Array.isArray(content)) {
+            const parts: string[] = [];
+            for (const part of content) {
+              if (typeof part === "string") {
+                parts.push(part);
+              } else if (part && typeof part === "object") {
+                if (typeof part.text === "string") parts.push(part.text);
+                else if (typeof part.input_text === "string") parts.push(part.input_text);
+                else if (part.type === "input_text" && typeof part.text === "string") parts.push(part.text);
+                else parts.push(JSON.stringify(part));
+              }
+            }
+            content = parts.join("\n");
+          } else if (typeof content === "object" && content !== null) {
+            content = (content as any).text || JSON.stringify(content);
+          }
+          messages.push({ role, content: String(content) });
         }
       }
     }
-    newBody.messages = messages;
+    newBody.messages = messages.length ? messages : [{ role: "user", content: "Hello" }];
   }
   delete newBody.input;
   delete newBody.instructions;
+  delete newBody.conversation;
+  delete newBody.output_item_types;
   return newBody;
 }
 
