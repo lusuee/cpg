@@ -2,7 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -39,6 +39,10 @@ export default function ProvidersPage() {
   const [showAdvancedSecret, setShowAdvancedSecret] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Search and filter state
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("");
 
   // Table batch selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -157,13 +161,25 @@ export default function ProvidersPage() {
     }
   }
 
-  const isAllSelected = items.length > 0 && items.every((p) => selectedIds.has(p.id));
+  const filteredItems = items.filter((p) => {
+    if (filterType && p.type !== filterType) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.endpoint && p.endpoint.toLowerCase().includes(q)) ||
+      (p.secret_name && p.secret_name.toLowerCase().includes(q)) ||
+      p.type.toLowerCase().includes(q)
+    );
+  });
+
+  const isAllSelected = filteredItems.length > 0 && filteredItems.every((p) => selectedIds.has(p.id));
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(items.map((p) => p.id)));
+      setSelectedIds(new Set(filteredItems.map((p) => p.id)));
     }
   };
 
@@ -189,58 +205,85 @@ export default function ProvidersPage() {
             配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址（直接保存至数据库，即刻生效）
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Floating / Inline Batch Operations Toolbar */}
-          {selectedIds.size > 0 ? (
-            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
-              <span className="font-semibold text-blue-900 dark:text-blue-300">已选 {selectedIds.size} 项</span>
-              <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1" />
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={batchOperating}
-                onClick={() => handleBatchEnable(true)}
-                className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-none"
-              >
-                <IconCheck />
-                <span>批量启用</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={batchOperating}
-                onClick={() => handleBatchEnable(false)}
-                className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
-              >
-                <span>批量停用</span>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={batchOperating}
-                onClick={handleBatchDelete}
-                className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
-              >
-                <IconTrash />
-                <span>批量删除</span>
-              </Button>
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className="ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
-              >
-                取消
-              </button>
+        <Button onClick={openCreate} className="shadow-sm">
+          <IconPlus />
+          <span>新增 Provider</span>
+        </Button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
+              <IconSearch />
             </div>
-          ) : null}
-          <Button onClick={openCreate} className="shadow-sm">
-            <IconPlus />
-            <span>新增 Provider</span>
-          </Button>
+            <Input
+              className="pl-9"
+              placeholder="搜索 Provider 名称 / Endpoint / 协议…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="w-full sm:w-44">
+            <Select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+            >
+              <option value="">全部协议 ({items.length})</option>
+              <option value="openai">OpenAI 兼容</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Google Gemini</option>
+            </Select>
+          </div>
         </div>
+
+        {/* Floating / Inline Batch Operations Toolbar */}
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+            <span className="font-semibold text-blue-900 dark:text-blue-300">已选 {selectedIds.size} 项</span>
+            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1" />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={() => handleBatchEnable(true)}
+              className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-none"
+            >
+              <IconCheck />
+              <span>批量启用</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={() => handleBatchEnable(false)}
+              className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
+            >
+              <span>批量停用</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={handleBatchDelete}
+              className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
+            >
+              <IconTrash />
+              <span>批量删除</span>
+            </Button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
+            >
+              取消
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <Card className="overflow-x-auto">
-        {items.length ? (
+        {filteredItems.length ? (
           <table className="w-full text-left text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
@@ -261,7 +304,7 @@ export default function ProvidersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {items.map((p) => {
+              {filteredItems.map((p) => {
                 const isSelected = selectedIds.has(p.id);
                 return (
                   <tr
@@ -341,7 +384,7 @@ export default function ProvidersPage() {
             </tbody>
           </table>
         ) : (
-          <Empty text="尚未添加任何 Provider" icon={<IconProviders className="w-8 h-8" />} />
+          <Empty text={items.length ? "未找到匹配的 Provider" : "尚未添加任何 Provider"} icon={<IconProviders className="w-8 h-8" />} />
         )}
       </Card>
 
