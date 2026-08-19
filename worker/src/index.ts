@@ -20,10 +20,7 @@ app.get("/health", (c) => c.json({ ok: true, service: "personal-ai-gateway" }));
 
 app.route("/api", adminApp);
 app.route("/v1", gatewayApp);
-
-// Unknown API routes should return JSON, not the SPA HTML fallback.
-app.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
-app.all("/v1/*", (c) => c.json({ error: "not_found" }, 404));
+app.route("/", gatewayApp);
 
 // Serve the built web dashboard (SPA fallback handled by [assets] config).
 app.all("*", async (c) => {
