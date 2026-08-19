@@ -86,8 +86,8 @@ export default function UsagePage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">API 调用与用量日志</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">API 调用与用量日志</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             实时记录每次网关透传请求、消耗的 Token 数、网络延迟与上游响应状态
           </p>
         </div>
@@ -99,7 +99,7 @@ export default function UsagePage() {
 
       <Card>
         {/* Filters Bar */}
-        <div className="flex flex-wrap items-center gap-3 pb-4 mb-4 border-b border-slate-100">
+        <div className="flex flex-wrap items-center gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="w-40">
             <Select value={range} onChange={(e) => setRange(e.target.value)}>
               <option value="24h">最近 24 小时</option>
@@ -119,7 +119,7 @@ export default function UsagePage() {
             </Select>
           </div>
           <div className="w-60 relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
               <IconSearch />
             </div>
             <Input
@@ -136,7 +136,7 @@ export default function UsagePage() {
           )}
         </div>
 
-        {error ? <div className="mb-4 text-xs text-rose-600 bg-rose-50 p-3 rounded-lg">{error}</div> : null}
+        {error ? <div className="mb-4 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-3 rounded-lg">{error}</div> : null}
 
         {loading ? (
           <Spinner text="正在获取日志数据…" />
@@ -145,7 +145,7 @@ export default function UsagePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                     <th className="pb-3 px-2">请求时间</th>
                     <th className="pb-3 px-2">状态码</th>
                     <th className="pb-3 px-2">模型</th>
@@ -159,10 +159,10 @@ export default function UsagePage() {
                     <th className="pb-3 px-2">Request ID</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {items.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-2 text-slate-500 whitespace-nowrap text-xs">{fmtTime(u.created_at)}</td>
+                    <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="py-3 px-2 text-slate-500 dark:text-slate-400 whitespace-nowrap text-xs">{fmtTime(u.created_at)}</td>
                       <td className="py-3 px-2">
                         <Badge
                           tone={
@@ -177,17 +177,17 @@ export default function UsagePage() {
                           {u.status_code ?? "-"}
                         </Badge>
                       </td>
-                      <td className="py-3 px-2 font-mono font-medium text-slate-900">{u.model || "-"}</td>
-                      <td className="py-3 px-2 text-slate-600">{u.provider_name || "-"}</td>
-                      <td className="py-3 px-2 text-slate-400 text-xs truncate max-w-[120px]">
+                      <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100">{u.model || "-"}</td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-400">{u.provider_name || "-"}</td>
+                      <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs truncate max-w-[120px]">
                         {u.device_id || "-"}
                       </td>
-                      <td className="py-3 px-2 text-right font-mono text-slate-500 text-xs">{fmtNum(u.input_tokens)}</td>
-                      <td className="py-3 px-2 text-right font-mono text-slate-500 text-xs">{fmtNum(u.output_tokens)}</td>
-                      <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 text-xs">
+                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs">{fmtNum(u.input_tokens)}</td>
+                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs">{fmtNum(u.output_tokens)}</td>
+                      <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 text-xs">
                         {fmtNum(u.total_tokens)}
                       </td>
-                      <td className="py-3 px-2 text-right font-mono text-xs text-purple-600 font-medium">
+                      <td className="py-3 px-2 text-right font-mono text-xs text-purple-600 dark:text-purple-400 font-medium">
                         {u.cost_usd ? `$${u.cost_usd.toFixed(4)}` : "$0.0000"}
                       </td>
                       <td className="py-3 px-2 text-right text-xs">
@@ -195,26 +195,26 @@ export default function UsagePage() {
                           <span
                             className={`font-mono ${
                               u.latency_ms > 5000
-                                ? "text-amber-600"
+                                ? "text-amber-600 dark:text-amber-400"
                                 : u.latency_ms > 15000
-                                ? "text-rose-600"
-                                : "text-slate-600"
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-slate-600 dark:text-slate-400"
                             }`}
                           >
                             {u.latency_ms}ms
                           </span>
                         ) : (
-                          <span className="text-slate-400">-</span>
+                          <span className="text-slate-400 dark:text-slate-500">-</span>
                         )}
                       </td>
                       <td className="py-3 px-2">
                         {u.request_id ? (
-                          <div className="flex items-center gap-1 font-mono text-[11px] text-slate-400">
+                          <div className="flex items-center gap-1 font-mono text-[11px] text-slate-400 dark:text-slate-500">
                             <span className="truncate max-w-[100px]">{u.request_id}</span>
                             <CopyButton text={u.request_id} />
                           </div>
                         ) : (
-                          <span className="text-slate-400 text-xs">-</span>
+                          <span className="text-slate-400 dark:text-slate-500 text-xs">-</span>
                         )}
                       </td>
                     </tr>
@@ -230,7 +230,7 @@ export default function UsagePage() {
                 </Button>
               </div>
             ) : (
-              <div className="mt-6 text-center text-xs text-slate-400">已加载全部结果</div>
+              <div className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">已加载全部结果</div>
             )}
           </>
         ) : (

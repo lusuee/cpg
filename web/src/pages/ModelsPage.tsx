@@ -307,8 +307,8 @@ export default function ModelsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">模型路由映射</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">模型路由映射</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             配置允许客户端调用的模型、上游 Provider 绑定以及自定义别名（Alias）
           </p>
         </div>
@@ -329,7 +329,7 @@ export default function ModelsPage() {
       </div>
 
       {!providers.length ? (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
           <span>⚠️ 尚未创建任何 Provider，请先前往「Providers」页面创建上游服务商。</span>
         </div>
       ) : null}
@@ -337,7 +337,7 @@ export default function ModelsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
           <div className="relative w-full sm:w-64">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
               <IconSearch />
             </div>
             <Input
@@ -365,15 +365,15 @@ export default function ModelsPage() {
 
         {/* Floating / Inline Batch Operations Toolbar */}
         {selectedIds.size > 0 ? (
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
-            <span className="font-semibold text-blue-900">已选中 {selectedIds.size} 项</span>
-            <div className="h-4 w-px bg-blue-200 mx-1" />
+          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+            <span className="font-semibold text-blue-900 dark:text-blue-300">已选中 {selectedIds.size} 项</span>
+            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1" />
             <Button
               size="sm"
               variant="outline"
               disabled={batchOperating}
               onClick={() => handleBatchEnable(true)}
-              className="bg-white text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 border-emerald-300 shadow-none"
+              className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-none"
             >
               <IconCheck />
               <span>批量启用</span>
@@ -383,7 +383,7 @@ export default function ModelsPage() {
               variant="outline"
               disabled={batchOperating}
               onClick={() => handleBatchEnable(false)}
-              className="bg-white text-slate-700 hover:bg-slate-100 shadow-none"
+              className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
             >
               <span>批量停用</span>
             </Button>
@@ -392,14 +392,14 @@ export default function ModelsPage() {
               variant="outline"
               disabled={batchOperating}
               onClick={handleBatchDelete}
-              className="bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200 shadow-none"
+              className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
             >
               <IconTrash />
               <span>批量删除</span>
             </Button>
             <button
               onClick={() => setSelectedIds(new Set())}
-              className="ml-1 text-slate-400 hover:text-slate-600 text-xs font-medium cursor-pointer"
+              className="ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
             >
               取消
             </button>
@@ -411,13 +411,13 @@ export default function ModelsPage() {
         {filteredItems.length ? (
           <table className="w-full text-left text-xs sm:text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-slate-400 font-medium">
+              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                 <th className="pb-3 px-2 w-8">
                   <input
                     type="checkbox"
                     checked={isAllFilteredSelected}
                     onChange={toggleSelectAll}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
                   />
                 </th>
                 <th className="pb-3 px-2">上游模型名</th>
@@ -430,38 +430,38 @@ export default function ModelsPage() {
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredItems.map((m) => {
                 const isSelected = selectedIds.has(m.id);
                 const fallbackModel = m.fallback_model_id ? items.find((x) => x.id === m.fallback_model_id) : null;
                 return (
                   <tr
                     key={m.id}
-                    className={`transition-colors ${isSelected ? "bg-blue-50/50" : "hover:bg-slate-50/60"}`}
+                    className={`transition-colors ${isSelected ? "bg-blue-50/50 dark:bg-blue-950/40" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/50"}`}
                   >
                     <td className="py-3 px-2">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelectRow(m.id)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
                       />
                     </td>
-                    <td className="py-3 px-2 font-mono font-medium text-slate-900">{m.model_name}</td>
-                    <td className="py-3 px-2 text-slate-700">{m.display_name || "-"}</td>
+                    <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100">{m.model_name}</td>
+                    <td className="py-3 px-2 text-slate-700 dark:text-slate-300">{m.display_name || "-"}</td>
                     <td className="py-3 px-2">
-                      {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400">-</span>}
+                      {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400 dark:text-slate-500">-</span>}
                     </td>
-                    <td className="py-3 px-2 text-slate-600 font-medium">
-                      {m.provider_name || <span className="font-mono text-xs text-slate-400">{m.provider_id}</span>}
+                    <td className="py-3 px-2 text-slate-600 dark:text-slate-400 font-medium">
+                      {m.provider_name || <span className="font-mono text-xs text-slate-400 dark:text-slate-500">{m.provider_id}</span>}
                     </td>
-                    <td className="py-3 px-2 font-mono text-xs text-slate-600">
+                    <td className="py-3 px-2 font-mono text-xs text-slate-600 dark:text-slate-400">
                       {m.input_price_per_m || m.output_price_per_m ? (
                         <span>
                           ${m.input_price_per_m || 0} / ${m.output_price_per_m || 0}
                         </span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-slate-400 dark:text-slate-500">-</span>
                       )}
                     </td>
                     <td className="py-3 px-2">
@@ -470,7 +470,7 @@ export default function ModelsPage() {
                           {fallbackModel.alias || fallbackModel.model_name}
                         </Badge>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-slate-400 dark:text-slate-500">-</span>
                       )}
                     </td>
                     <td className="py-3 px-2">
@@ -498,7 +498,7 @@ export default function ModelsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                           onClick={() => onDelete(m)}
                         >
                           <IconTrash />
@@ -525,7 +525,7 @@ export default function ModelsPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">选择上游 Provider</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">选择上游 Provider</label>
             <div className="flex gap-2">
               <Select
                 value={syncProviderId}
@@ -549,17 +549,17 @@ export default function ModelsPage() {
                 {syncLoading ? "正在拉取…" : "获取可用模型"}
               </Button>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
               网关将使用该 Provider 配置的 Secret Key 请求上游 <code>GET /models</code> 接口。
             </p>
           </div>
 
-          {syncError ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{syncError}</div> : null}
+          {syncError ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{syncError}</div> : null}
 
           {fetchedModels.length ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold text-slate-700">
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   上游返回 {fetchedModels.length} 个模型 (已选 {selectedModels.size} 个)
                 </div>
                 <div className="flex items-center gap-2">
@@ -585,7 +585,7 @@ export default function ModelsPage() {
                 onChange={(e) => setSyncFilter(e.target.value)}
               />
 
-              <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl p-2 divide-y divide-slate-100 bg-slate-50/50">
+              <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
                 {filteredSyncModels.map((name) => {
                   const isChecked = selectedModels.has(name);
                   const isExisting = items.some(
@@ -594,7 +594,7 @@ export default function ModelsPage() {
                   return (
                     <label
                       key={name}
-                      className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded-lg cursor-pointer text-xs transition-colors"
+                      className="flex items-center justify-between py-1.5 px-2 hover:bg-white dark:hover:bg-slate-800/60 rounded-lg cursor-pointer text-xs transition-colors"
                     >
                       <div className="flex items-center gap-2">
                         <input
@@ -606,9 +606,9 @@ export default function ModelsPage() {
                             else next.delete(name);
                             setSelectedModels(next);
                           }}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                          className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                         />
-                        <span className="font-mono font-medium text-slate-800">{name}</span>
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{name}</span>
                       </div>
                       {isExisting ? <Badge tone="slate">已在列表中</Badge> : <Badge tone="green">新模型</Badge>}
                     </label>
@@ -618,7 +618,7 @@ export default function ModelsPage() {
             </div>
           ) : null}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="secondary" onClick={() => setShowSync(false)}>
               关闭
             </Button>
@@ -639,7 +639,7 @@ export default function ModelsPage() {
       <Modal open={show} onClose={() => setShow(false)} title={form.id ? "编辑 Model" : "新增 Model"}>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">上游 Provider</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">上游 Provider</label>
             <Select value={form.provider_id} onChange={(e) => setForm({ ...form, provider_id: e.target.value })}>
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -650,7 +650,7 @@ export default function ModelsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">上游模型标识 (Model ID)</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">上游模型标识 (Model ID)</label>
             <Input
               required
               placeholder="例如 gpt-4o / claude-3-5-sonnet-20241022 / gemini-1.5-pro"
@@ -661,7 +661,7 @@ export default function ModelsPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">显示名称（可选）</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">显示名称（可选）</label>
               <Input
                 placeholder="例如 Claude 3.5 Sonnet"
                 value={form.display_name}
@@ -669,7 +669,7 @@ export default function ModelsPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">快捷别名（可选）</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">快捷别名（可选）</label>
               <Input
                 placeholder="例如 claude / gpt4"
                 value={form.alias}
@@ -679,8 +679,8 @@ export default function ModelsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              故障降级备用模型 (Fallback Model) <span className="text-slate-400 font-normal">（主上游 5xx/429 时自动重试）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              故障降级备用模型 (Fallback Model) <span className="text-slate-400 dark:text-slate-500 font-normal">（主上游 5xx/429 时自动重试）</span>
             </label>
             <Select
               value={form.fallback_model_id}
@@ -699,7 +699,7 @@ export default function ModelsPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 输入定价 ($ / 1M Tokens)
               </label>
               <Input
@@ -712,7 +712,7 @@ export default function ModelsPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 输出定价 ($ / 1M Tokens)
               </label>
               <Input
@@ -727,8 +727,8 @@ export default function ModelsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              高级 JSON 覆盖配置 <span className="text-slate-400 font-normal">（可选）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              高级 JSON 覆盖配置 <span className="text-slate-400 dark:text-slate-500 font-normal">（可选）</span>
             </label>
             <Textarea
               rows={3}
@@ -742,18 +742,18 @@ export default function ModelsPage() {
             <input
               type="checkbox"
               id="model-enabled"
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+              className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
               checked={form.enabled}
               onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
             />
-            <label htmlFor="model-enabled" className="text-xs font-medium text-slate-700 cursor-pointer select-none">
+            <label htmlFor="model-enabled" className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
               立即启用此模型
             </label>
           </div>
 
-          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+          {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="secondary" onClick={() => setShow(false)}>
               取消
             </Button>
@@ -772,15 +772,15 @@ export default function ModelsPage() {
         maxWidth="max-w-2xl"
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             将网关 Base URL 和当前已启用的 {activeModels.length} 个模型快速复制到 Codex、Continue、Cursor 或各类 AI 开发工具中。
           </p>
 
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <button
               onClick={() => setExportFormat("codex")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "codex" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"
+                exportFormat === "codex" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               Codex / OpenAI 格式 (JSON)
@@ -788,7 +788,7 @@ export default function ModelsPage() {
             <button
               onClick={() => setExportFormat("continue")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "continue" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-50"
+                exportFormat === "continue" ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               Continue / VSCode 格式
@@ -796,14 +796,14 @@ export default function ModelsPage() {
             <button
               onClick={() => setExportFormat("list")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "list" ? "bg-slate-100 text-slate-800" : "text-slate-600 hover:bg-slate-50"
+                exportFormat === "list" ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               纯模型列表 (Text)
             </button>
           </div>
 
-          <div className="relative rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
+          <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
             <div className="absolute top-3 right-3 z-10">
               <CopyButton
                 text={
@@ -825,13 +825,13 @@ export default function ModelsPage() {
             </pre>
           </div>
 
-          <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-800 space-y-1">
+          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl text-xs text-blue-800 dark:text-blue-300 space-y-1">
             <div className="font-semibold">💡 使用提示：</div>
             <p>1. 将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」页面创建的有效密钥（如 <code>ccs_xxx</code>）。</p>
             <p>2. 支持直接配置 Base URL：<code>{baseUrl}/v1</code>，客户端每次请求指定任意模型时，网关均会自动透明匹配至对应的上游服务商。</p>
           </div>
 
-          <div className="flex justify-end pt-2 border-t border-slate-100">
+          <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" onClick={() => setShowExport(false)}>
               完成
             </Button>

@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "gemini" | "curl">("openai");
 
   if (loading && !data) return <Spinner text="正在加载系统设置…" />;
-  if (error && !data) return <div className="text-xs text-rose-600 bg-rose-50 p-4 rounded-xl">{error.message}</div>;
+  if (error && !data) return <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-4 rounded-xl">{error.message}</div>;
 
   const baseUrl = data?.gateway_base_url || window.location.origin;
 
@@ -83,8 +83,8 @@ console.log(res.choices[0].message.content);`;
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">系统设置与接入指引</h2>
-        <p className="text-xs text-slate-500 mt-1">查看网关全局环境配置、服务商运行概览及客户端接入代码示例</p>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">系统设置与接入指引</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">查看网关全局环境配置、服务商运行概览及客户端接入代码示例</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -92,22 +92,22 @@ console.log(res.choices[0].message.content);`;
         <Card title="网关配置概览" className="lg:col-span-1">
           <dl className="space-y-3.5 text-xs">
             <div>
-              <dt className="text-slate-400 font-medium">应用名称</dt>
-              <dd className="font-semibold text-slate-800 mt-0.5">{data?.app_name || "AI Gateway"}</dd>
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">应用名称</dt>
+              <dd className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{data?.app_name || "AI Gateway"}</dd>
             </div>
             <div>
-              <dt className="text-slate-400 font-medium">Gateway Base URL</dt>
-              <dd className="font-mono text-blue-700 bg-blue-50/60 p-2 rounded-lg break-all mt-1 flex items-center justify-between gap-1">
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">Gateway Base URL</dt>
+              <dd className="font-mono text-blue-700 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/50 p-2 rounded-lg break-all mt-1 flex items-center justify-between gap-1">
                 <span>{baseUrl}</span>
                 <CopyButton text={baseUrl} />
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400 font-medium">已配置 Provider 数量</dt>
-              <dd className="font-semibold text-slate-800 mt-0.5">{data?.provider_count ?? 0} 个</dd>
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">已配置 Provider 数量</dt>
+              <dd className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{data?.provider_count ?? 0} 个</dd>
             </div>
             <div>
-              <dt className="text-slate-400 font-medium">Cloudflare Access 零信任</dt>
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">Cloudflare Access 零信任</dt>
               <dd className="mt-0.5 flex items-center gap-1.5">
                 <Badge tone={data?.cf_access_configured ? "green" : "slate"} dot>
                   {data?.cf_access_configured ? "已配置邮箱白名单" : "未开启（密码登录）"}
@@ -115,8 +115,8 @@ console.log(res.choices[0].message.content);`;
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400 font-medium">部署运行环境</dt>
-              <dd className="text-slate-700 mt-0.5 flex items-center gap-1.5">
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">部署运行环境</dt>
+              <dd className="text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 Cloudflare Workers & D1
               </dd>
@@ -129,18 +129,18 @@ console.log(res.choices[0].message.content);`;
           {data?.providers?.length ? (
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                   <th className="pb-2.5 px-2">Provider</th>
                   <th className="pb-2.5 px-2">协议类型</th>
                   <th className="pb-2.5 px-2">服务状态</th>
                   <th className="pb-2.5 px-2">密钥状态</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {data.providers.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-2.5 px-2 font-medium text-slate-900">{p.name}</td>
-                    <td className="py-2.5 px-2 text-slate-600 uppercase text-[11px]">{p.type}</td>
+                    <td className="py-2.5 px-2 font-medium text-slate-900 dark:text-slate-100">{p.name}</td>
+                    <td className="py-2.5 px-2 text-slate-600 dark:text-slate-400 uppercase text-[11px]">{p.type}</td>
                     <td className="py-2.5 px-2">
                       <Badge tone={p.enabled ? "green" : "slate"} dot>
                         {p.enabled ? "启用" : "停用"}
@@ -164,11 +164,11 @@ console.log(res.choices[0].message.content);`;
       {/* Integration Code Examples */}
       <Card title="客户端接入指南 (SDK Code Snippets)">
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <button
               onClick={() => setActiveTab("openai")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === "openai" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"
+                activeTab === "openai" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               OpenAI SDK (Python)
@@ -176,7 +176,7 @@ console.log(res.choices[0].message.content);`;
             <button
               onClick={() => setActiveTab("anthropic")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === "anthropic" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-50"
+                activeTab === "anthropic" ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               Anthropic SDK (TypeScript)
@@ -184,7 +184,7 @@ console.log(res.choices[0].message.content);`;
             <button
               onClick={() => setActiveTab("gemini")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === "gemini" ? "bg-amber-50 text-amber-700" : "text-slate-600 hover:bg-slate-50"
+                activeTab === "gemini" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               Gemini (via Gateway)
@@ -192,14 +192,14 @@ console.log(res.choices[0].message.content);`;
             <button
               onClick={() => setActiveTab("curl")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                activeTab === "curl" ? "bg-slate-100 text-slate-800" : "text-slate-600 hover:bg-slate-50"
+                activeTab === "curl" ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               cURL 请求
             </button>
           </div>
 
-          <div className="relative rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-200 overflow-x-auto">
+          <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto">
             <div className="absolute top-3 right-3">
               <CopyButton
                 text={

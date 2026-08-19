@@ -94,8 +94,8 @@ export default function ProvidersPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">上游 Provider 管理</h2>
-          <p className="text-xs text-slate-500 mt-1">配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址</p>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">上游 Provider 管理</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址</p>
         </div>
         <Button onClick={openCreate} className="shadow-sm">
           <IconPlus />
@@ -107,7 +107,7 @@ export default function ProvidersPage() {
         {items.length ? (
           <table className="w-full text-left text-xs sm:text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-slate-400 font-medium">
+              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                 <th className="pb-3 px-2">名称</th>
                 <th className="pb-3 px-2">协议类型</th>
                 <th className="pb-3 px-2">自定义 Endpoint</th>
@@ -116,28 +116,28 @@ export default function ProvidersPage() {
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {items.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-3 px-2 font-semibold text-slate-900">{p.name}</td>
+                <tr key={p.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                  <td className="py-3 px-2 font-semibold text-slate-900 dark:text-slate-100">{p.name}</td>
                   <td className="py-3 px-2">
                     <Badge tone={p.type === "anthropic" ? "purple" : p.type === "gemini" ? "amber" : "blue"}>
                       {p.type === "anthropic" ? "Anthropic" : p.type === "gemini" ? "Gemini" : "OpenAI"}
                     </Badge>
                   </td>
-                  <td className="py-3 px-2 font-mono text-slate-500 text-xs max-w-xs truncate">
-                    {p.endpoint || <span className="text-slate-400 italic">官方默认</span>}
+                  <td className="py-3 px-2 font-mono text-slate-500 dark:text-slate-400 text-xs max-w-xs truncate">
+                    {p.endpoint || <span className="text-slate-400 dark:text-slate-500 italic">官方默认</span>}
                   </td>
                   <td className="py-3 px-2">
                     {p.secret_name ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs text-slate-700">{p.secret_name}</span>
+                        <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{p.secret_name}</span>
                         <Badge tone={p.secret_configured ? "green" : "red"} dot>
                           {p.secret_configured ? "有效" : "未绑定"}
                         </Badge>
                       </div>
                     ) : (
-                      <span className="text-slate-400 text-xs">无 Secret</span>
+                      <span className="text-slate-400 dark:text-slate-500 text-xs">无 Secret</span>
                     )}
                   </td>
                   <td className="py-3 px-2">
@@ -155,7 +155,7 @@ export default function ProvidersPage() {
                         <IconEdit />
                         <span>编辑</span>
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => onDelete(p)}>
+                      <Button variant="ghost" size="sm" className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40" onClick={() => onDelete(p)}>
                         <IconTrash />
                         <span>删除</span>
                       </Button>
@@ -173,7 +173,7 @@ export default function ProvidersPage() {
       <Modal open={show} onClose={() => setShow(false)} title={form.id ? "编辑 Provider" : "新增 Provider"}>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Provider 标识名称</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Provider 标识名称</label>
             <Input
               required
               placeholder="例如：OpenAI 官方 / Google Gemini / DeepSeek"
@@ -184,7 +184,7 @@ export default function ProvidersPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">协议类型</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">协议类型</label>
               <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as any })}>
                 <option value="openai">OpenAI-compatible</option>
                 <option value="anthropic">Anthropic</option>
@@ -192,7 +192,7 @@ export default function ProvidersPage() {
               </Select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Secret 变量名</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Secret 变量名</label>
               <Input
                 placeholder="例如 OPENAI_API_KEY / GEMINI_API_KEY"
                 value={form.secret_name}
@@ -202,8 +202,8 @@ export default function ProvidersPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              API Base Endpoint <span className="text-slate-400 font-normal">（留空使用官方默认地址）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              API Base Endpoint <span className="text-slate-400 dark:text-slate-500 font-normal">（留空使用官方默认地址）</span>
             </label>
             <Input
               placeholder="https://api.openai.com/v1"
@@ -213,8 +213,8 @@ export default function ProvidersPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              高级 JSON 配置 <span className="text-slate-400 font-normal">（可选，JSON 格式）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              高级 JSON 配置 <span className="text-slate-400 dark:text-slate-500 font-normal">（可选，JSON 格式）</span>
             </label>
             <Textarea
               rows={3}
@@ -228,18 +228,18 @@ export default function ProvidersPage() {
             <input
               type="checkbox"
               id="provider-enabled"
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+              className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
               checked={form.enabled}
               onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
             />
-            <label htmlFor="provider-enabled" className="text-xs font-medium text-slate-700 cursor-pointer select-none">
+            <label htmlFor="provider-enabled" className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
               立即启用此 Provider
             </label>
           </div>
 
-          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+          {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="secondary" onClick={() => setShow(false)}>
               取消
             </Button>

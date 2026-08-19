@@ -5,6 +5,7 @@ import type { StatsResponse, UsageItem } from "../types";
 import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
 import { IconActivity, IconZap, IconTerminal } from "../components/icons";
 import { useQuery } from "../hooks/useQuery";
+import { useTheme } from "../hooks/useTheme";
 
 interface DashboardData {
   stats: Record<string, StatsResponse>;
@@ -13,6 +14,9 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
   const fetchDashboard = useCallback(async (): Promise<DashboardData> => {
     const [today, d7, d30, usage, settings] = await Promise.all([
       api.get<StatsResponse>("/api/usage/stats?range=today"),
@@ -100,19 +104,19 @@ export default function DashboardPage() {
             <div className="pt-2">
               <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="date" fontSize={11} stroke="#94a3b8" tickLine={false} />
-                  <YAxis allowDecimals={false} fontSize={11} stroke="#94a3b8" tickLine={false} axisLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#334155" : "#f1f5f9"} />
+                  <XAxis dataKey="date" fontSize={11} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} />
+                  <YAxis allowDecimals={false} fontSize={11} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1e293b",
+                      backgroundColor: isDark ? "#0f172a" : "#1e293b",
                       borderRadius: "8px",
-                      border: "none",
+                      border: isDark ? "1px solid #334155" : "none",
                       color: "#fff",
                       fontSize: "12px",
                       padding: "8px 12px",
                     }}
-                    cursor={{ fill: "rgba(59, 130, 246, 0.05)" }}
+                    cursor={{ fill: isDark ? "rgba(59, 130, 246, 0.1)" : "rgba(59, 130, 246, 0.05)" }}
                   />
                   <Bar dataKey="requests" name="请求数" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -136,7 +140,7 @@ export default function DashboardPage() {
 
         <Card title="最近调用日志">
           {recent.length ? (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {recent.map((u) => (
                 <div key={u.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -146,14 +150,14 @@ export default function DashboardPage() {
                     >
                       {u.status_code ?? "-"}
                     </Badge>
-                    <span className="font-semibold text-slate-800 truncate max-w-[140px] sm:max-w-[200px]">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[140px] sm:max-w-[200px]">
                       {u.model || "-"}
                     </span>
-                    <span className="text-slate-400 text-[11px] truncate">{u.provider_name || "-"}</span>
+                    <span className="text-slate-400 dark:text-slate-500 text-[11px] truncate">{u.provider_name || "-"}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-mono text-slate-500">{fmtNum(u.total_tokens)} T</span>
-                    <span className="text-slate-400">{fmtTime(u.created_at).slice(11)}</span>
+                    <span className="font-mono text-slate-500 dark:text-slate-400">{fmtNum(u.total_tokens)} T</span>
+                    <span className="text-slate-400 dark:text-slate-500">{fmtTime(u.created_at).slice(11)}</span>
                   </div>
                 </div>
               ))}
@@ -179,18 +183,18 @@ function StatCard({
   tone?: "blue" | "green" | "red" | "purple" | "slate";
 }) {
   const toneBg = {
-    blue: "text-blue-600",
-    green: "text-emerald-600",
-    red: "text-rose-600",
-    purple: "text-purple-600",
-    slate: "text-slate-800",
+    blue: "text-blue-600 dark:text-blue-400",
+    green: "text-emerald-600 dark:text-emerald-400",
+    red: "text-rose-600 dark:text-rose-400",
+    purple: "text-purple-600 dark:text-purple-400",
+    slate: "text-slate-800 dark:text-slate-100",
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:shadow-md">
-      <div className="text-xs font-medium text-slate-400">{label}</div>
+    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-all hover:shadow-md">
+      <div className="text-xs font-medium text-slate-400 dark:text-slate-500">{label}</div>
       <div className={`mt-2 text-2xl sm:text-3xl font-bold tracking-tight ${toneBg[tone]}`}>{value}</div>
-      <div className="mt-1 text-[11px] font-medium text-slate-400">{sub}</div>
+      <div className="mt-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">{sub}</div>
     </div>
   );
 }
@@ -201,19 +205,19 @@ function BreakdownTable({ rows }: { rows: Array<{ name: string; requests: number
   const maxTokens = Math.max(...rows.map((r) => r.tokens), 1);
 
   return (
-    <div className="divide-y divide-slate-100">
+    <div className="divide-y divide-slate-100 dark:divide-slate-800">
       {rows.map((r) => (
         <div key={r.name} className="py-2.5">
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="font-medium text-slate-800 truncate max-w-[200px]">{r.name}</span>
-            <div className="flex items-center gap-3 text-slate-500 font-mono text-[11px]">
+            <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{r.name}</span>
+            <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
               <span>{fmtNum(r.requests)} 次</span>
-              <span className="font-semibold text-slate-700">{fmtNum(r.tokens)} Tokens</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{fmtNum(r.tokens)} Tokens</span>
             </div>
           </div>
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-blue-600 h-full rounded-full transition-all duration-300"
+              className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all duration-300"
               style={{ width: `${Math.min(100, Math.max(5, (r.tokens / maxTokens) * 100))}%` }}
             />
           </div>

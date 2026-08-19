@@ -100,8 +100,8 @@ export default function DevicesPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">设备与客户端 Token</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">设备与客户端 Token</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             为不同客户端（如 Cursor、VS Code 插件、本地脚本、手机）签发独立的鉴权 Token 与速率限制
           </p>
         </div>
@@ -123,7 +123,7 @@ export default function DevicesPage() {
         {items.length ? (
           <table className="w-full text-left text-xs sm:text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-slate-400 font-medium">
+              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                 <th className="pb-3 px-2">设备名称</th>
                 <th className="pb-3 px-2">当前状态</th>
                 <th className="pb-3 px-2">每分钟限流 (RPM)</th>
@@ -132,12 +132,12 @@ export default function DevicesPage() {
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {items.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50/60 transition-colors">
+                <tr key={d.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
                   <td className="py-3 px-2">
-                    <div className="font-semibold text-slate-900">{d.name}</div>
-                    <div className="font-mono text-[11px] text-slate-400">ID: {d.id}</div>
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">{d.name}</div>
+                    <div className="font-mono text-[11px] text-slate-400 dark:text-slate-500">ID: {d.id}</div>
                   </td>
                   <td className="py-3 px-2">
                     {d.revoked_at ? (
@@ -158,11 +158,11 @@ export default function DevicesPage() {
                     {d.rate_limit_rpm ? (
                       <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
                     ) : (
-                      <span className="text-slate-400">无限制</span>
+                      <span className="text-slate-400 dark:text-slate-500">无限制</span>
                     )}
                   </td>
-                  <td className="py-3 px-2 text-slate-600 text-xs">{fmtTime(d.last_used_at)}</td>
-                  <td className="py-3 px-2 text-slate-400 text-xs">{fmtTime(d.created_at)}</td>
+                  <td className="py-3 px-2 text-slate-600 dark:text-slate-400 text-xs">{fmtTime(d.last_used_at)}</td>
+                  <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs">{fmtTime(d.created_at)}</td>
                   <td className="py-3 px-2 text-right">
                     {!d.revoked_at ? (
                       <div className="flex items-center justify-end gap-1">
@@ -176,14 +176,14 @@ export default function DevicesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                           onClick={() => onRevoke(d)}
                         >
                           撤销
                         </Button>
                       </div>
                     ) : (
-                      <span className="text-slate-400 text-xs italic">不可用</span>
+                      <span className="text-slate-400 dark:text-slate-500 text-xs italic">不可用</span>
                     )}
                   </td>
                 </tr>
@@ -203,7 +203,7 @@ export default function DevicesPage() {
       >
         <form onSubmit={onCreate} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">设备/应用名称</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">设备/应用名称</label>
             <Input
               required
               value={name}
@@ -211,14 +211,14 @@ export default function DevicesPage() {
               placeholder="例如：MacBook Cursor / 本地工作站 / iOS 快捷指令"
               autoFocus
             />
-            <p className="text-[11px] text-slate-400 mt-1.5">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5">
               建议为每台设备分配专属名称，便于在用量记录中审计来源与精准撤销。
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              每分钟请求限流 (RPM) <span className="text-slate-400 font-normal">（0 为不限制）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              每分钟请求限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0 为不限制）</span>
             </label>
             <Input
               type="number"
@@ -229,9 +229,9 @@ export default function DevicesPage() {
             />
           </div>
 
-          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+          {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
               取消
             </Button>
@@ -250,7 +250,7 @@ export default function DevicesPage() {
       >
         <form onSubmit={onSaveEdit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">设备/应用名称</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">设备/应用名称</label>
             <Input
               required
               value={editName}
@@ -260,8 +260,8 @@ export default function DevicesPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              每分钟请求限流 (RPM) <span className="text-slate-400 font-normal">（0 为不限制）</span>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              每分钟请求限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0 为不限制）</span>
             </label>
             <Input
               type="number"
@@ -272,9 +272,9 @@ export default function DevicesPage() {
             />
           </div>
 
-          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+          {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="secondary" onClick={() => setEditingDevice(null)}>
               取消
             </Button>
@@ -288,29 +288,29 @@ export default function DevicesPage() {
       {/* Token Created Modal */}
       <Modal open={Boolean(created)} onClose={() => setCreated(null)} title="设备 Token 签发成功">
         <div className="space-y-4">
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <IconShield className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
+            <IconShield className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <div>
               <span className="font-semibold">请妥善保存此 Token！</span>
-              <p className="mt-0.5 text-amber-800">
+              <p className="mt-0.5 text-amber-800 dark:text-amber-300">
                 该 Token 仅在此处展示一次，关闭窗口后将无法再次查看完整密钥。
               </p>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <div className="text-xs font-semibold text-slate-700">Bearer Token 密钥</div>
-            <div className="rounded-xl bg-slate-900 p-3.5 font-mono text-xs break-all text-emerald-300 select-all border border-slate-800 flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bearer Token 密钥</div>
+            <div className="rounded-xl bg-slate-900 dark:bg-slate-950 p-3.5 font-mono text-xs break-all text-emerald-300 select-all border border-slate-800 flex items-center justify-between gap-2">
               <span>{created?.token}</span>
             </div>
           </div>
 
-          <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1 font-mono">
-            <div className="text-slate-400 font-sans text-[11px] font-semibold">请求头使用示例：</div>
+          <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs text-slate-600 dark:text-slate-300 space-y-1 font-mono">
+            <div className="text-slate-400 dark:text-slate-500 font-sans text-[11px] font-semibold">请求头使用示例：</div>
             <div>Authorization: Bearer {created?.token?.slice(0, 16)}...</div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button
               variant="secondary"
               onClick={() => {
