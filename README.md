@@ -133,55 +133,88 @@ pnpm db:migrate:remote
 | `GET` | `/api/usage/stats?range=today|7d|30d` | 统计汇总、按 Provider/Model 分布与趋势 |
 | `GET` | `/api/settings` | Dashboard 设置信息 |
 
-## Gateway API（设备调用）
+## Gateway 路由与调用方式
 
-V1 使用设备 Token 鉴权，不接管理端会话。支持两种方式传递 Token：
+网关采用透明路由机制，客户端统一使用网关地址和设备 Token，通过 `model` 参数自动定位上游：
 
-- `Authorization: Bearer <device-token>`
-- Anthropic SDK 风格 `x-api-key: <device-token>`
-
-可用端点：
+1. **自动路由匹配**：请求传入的 `model`（可以是真实上游模型名，也可以是后台设置的 `alias` 别名），网关会自动匹配对应的 Provider、Endpoint 与 Secret 密钥。
+2. **双路径兼容**：同时兼容带 `/v1`（`/v1/chat/completions`）与不带 `/v1`（`/chat/completions`）的请求端点。
 
 | 路径 | 协议 |
 | --- | --- |
-| `POST /v1/messages` | Anthropic Messages API |
-| `POST /v1/chat/completions` | OpenAI-compatible Chat Completions |
-| `GET /v1/models` | 返回已配置且启用的模型列表 |
+| `POST /v1/chat/completions` 或 `/chat/completions` | OpenAI-compatible Chat Completions |
+| `POST /v1/messages` 或 `/messages` | Anthropic Messages API |
+| `GET /v1/models` 或 `/models` | 返回已配置且启用的模型列表 |
 
-请求中的 `model` 可以是 D1 Model 记录的 `model_name` 或 `alias`。Worker 会根据 Model 解析到 Provider 和上游 Key。
+### 示例代码
 
-示例（OpenAI SDK）：
-
+#### OpenAI SDK（Python / TypeScript）
 ```ts
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://ai.example.com/v1",
-  apiKey: "ccs_你的设备Token",
+  baseURL: "https://cpg.你的用户名.workers.dev/v1",
+  apiKey: "ccs_你的设备Token", // 在「设备 Token」页面签发的 Token
 });
 
 const res = await client.chat.completions.create({
-  model: "my-claude-alias", // D1 中配置的 model_name 或 alias
-  messages: [{ role: "user", content: "你好" }],
+  model: "deepseek-v4-flash", // 填入后台配置的 model_name 或 alias
+  messages: [{ role: "user", content: "你好！" }],
 });
+console.log(res.choices[0].message.content);
 ```
 
-示例（Anthropic SDK）：
-
+#### Anthropic SDK
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: "https://ai.example.com",
+  baseURL: "https://cpg.你的用户名.workers.dev",
   apiKey: "ccs_你的设备Token",
 });
 
 const res = await client.messages.create({
-  model: "my-gpt-alias",
+  model: "claude-3-5-sonnet-20241022",
   max_tokens: 1024,
-  messages: [{ role: "user", content: "你好" }],
+  messages: [{ role: "user", content: "你好！" }],
 });
+console.log(res.content[0]);
 ```
+
+---
+
+## 高级 JSON 配置说明 (`config_json`)
+
+在管理端的 **Providers** 和 **Models** 页面中，均包含一个可选的 `config_json` 字段：
+
+> **常规使用**：直接**留空**即可，网关默认使用标准透明透传。
+> **特殊场景**：当对接非标准上游（如 Azure OpenAI、私有 vLLM 部署、特定模型参数覆盖）时按需填写。
+
+### 1. Provider 级别的 `config_json`
+用于配置与该服务商通信时的全局请求头与网络选项：
+
+```json
+{
+  "headers": {
+    "OpenAI-Organization": "org-xxxxxx",
+    "api-key": "your-azure-api-key"
+  },
+  "timeout_ms": 60000
+}
+```
+
+### 2. Model 级别的 `config_json`
+用于对该模型设置强制覆盖或注入的请求参数：
+
+```json
+{
+  "max_tokens": 4096,
+  "temperature": 0.7,
+  "reasoning_effort": "medium"
+}
+```
+
+---
 
 ## D1 Schema
 
