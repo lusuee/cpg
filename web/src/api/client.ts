@@ -7,9 +7,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const tzOffset = String(new Date().getTimezoneOffset());
   const res = await fetch(path, {
     credentials: "include",
-    headers: init?.body ? { "Content-Type": "application/json", ...(init.headers || {}) } : init?.headers,
+    headers: {
+      "X-Timezone-Offset": tzOffset,
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers || {}),
+    },
     ...init,
   });
   if (!res.ok) {

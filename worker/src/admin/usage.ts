@@ -5,10 +5,35 @@ import { listUsage, statsSummary, statsByProvider, statsByModel, statsTrend, agg
 export const usageApp = new Hono<{ Bindings: Env }>();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-function startOfToday(offsetDays = 0): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime() - offsetDays * DAY_MS;
+
+export function getTzOffsetMinutes(c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined } }): number {
+  const header = c.req.header("x-timezone-offset");
+  if (header !== undefined && header !== "") {
+    const n = parseInt(header, 10);
+    if (!isNaN(n) && n >= -840 && n <= 840) return n;
+  }
+  const q = c.req.query("tzOffset");
+  if (q !== undefined && q !== "") {
+    const n = parseInt(q, 10);
+    if (!isNaN(n) && n >= -840 && n <= 840) return n;
+  }
+  // Default to -480 (UTC+8 / China Standard Time)
+  return -480;
+}
+
+export function startOfToday(offsetDays = 0, tzOffsetMinutes = -480): number {
+  const now = Date.now();
+  const localTime = now - tzOffsetMinutes * 60 * 1000;
+  const localMidnight = Math.floor(localTime / DAY_MS) * DAY_MS;
+  const utcMidnight = localMidnight + tzOffsetMinutes * 60 * 1000;
+  return utcMidnight - offsetDays * DAY_MS;
+}
+
+export function formatSqlTimezoneModifier(tzOffsetMinutes: number): string {
+  // In JS, tzOffsetMinutes is UTC - Local (e.g. -480 for UTC+8)
+  const shiftMinutes = -tzOffsetMinutes;
+  const sign = shiftMinutes >= 0 ? "+" : "-";
+  return `${sign}${Math.abs(shiftMinutes)} minutes`;
 }
 
 export function escapeCsvField(val: unknown): string {
@@ -110,21 +135,25 @@ usageApp.get("/", async (c) => {
 
 usageApp.get("/stats", async (c) => {
   const range = c.req.query("range") || "today";
+  const tzOffset = getTzOffsetMinutes(c);
   let since: number;
-  if (range === "7d") since = startOfToday(6);
-  else if (range === "30d") since = startOfToday(29);
-  else since = startOfToday(0);
+  if (range === "7d") since = startOfToday(6, tzOffset);
+  else if (range === "30d") since = startOfToday(29, tzOffset);
+  else since = startOfToday(0, tzOffset);
+
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
 
   const [summary, byProvider, byModel, trend] = await Promise.all([
     statsSummary(c.env, since),
     statsByProvider(c.env, since),
     statsByModel(c.env, since),
-    statsTrend(c.env, since),
+    statsTrend(c.env, since, tzModifier),
   ]);
 
   return c.json({
     range,
     since,
+    tzOffset,
     summary,
     byProvider,
     byModel,

@@ -64,3 +64,17 @@ describe("parseUsage", () => {
   });
 });
 
+describe("Timezone Aware Usage Stats Helpers", () => {
+  it("computes startOfToday midnight accurately for UTC+8 (Beijing Time)", async () => {
+    const { startOfToday, formatSqlTimezoneModifier } = await import("../src/admin/usage");
+    const beijingMidnightUtc = startOfToday(0, -480);
+    // At Beijing midnight (00:00:00 CST), the hour in UTC is 16:00:00 (of previous day)
+    const date = new Date(beijingMidnightUtc);
+    expect(date.getUTCHours()).toBe(16);
+    expect(date.getUTCMinutes()).toBe(0);
+
+    const modifier = formatSqlTimezoneModifier(-480);
+    expect(modifier).toBe("+480 minutes");
+  });
+});
+

@@ -435,11 +435,11 @@ export async function statsByModel(env: Env, since: number) {
   return res.results;
 }
 
-export async function statsTrend(env: Env, since: number) {
+export async function statsTrend(env: Env, since: number, tzModifier = "+480 minutes") {
   const res = await env.DB.prepare(
-    "SELECT strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) as date, COUNT(*) as requests, " +
+    "SELECT strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) as date, COUNT(*) as requests, " +
       "COALESCE(SUM(total_tokens), 0) as tokens, COALESCE(SUM(cost_usd), 0) as cost_usd FROM usage WHERE created_at >= ? GROUP BY date ORDER BY date ASC"
-  ).bind(since).all();
+  ).bind(tzModifier, since).all();
   return res.results;
 }
 
@@ -452,16 +452,17 @@ export async function recordUsageSafe(env: Env, data: Parameters<typeof insertUs
   }
 }
 
-export async function aggregateDailyStats(env: Env, targetDate?: string): Promise<{ aggregated: number }> {
+export async function aggregateDailyStats(env: Env, targetDate?: string, tzModifier = "+480 minutes"): Promise<{ aggregated: number }> {
   await ensureSchema(env);
   const dateClause = targetDate
-    ? "strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) = ?"
+    ? "strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) = ?"
     : "created_at >= " + (Date.now() - 2 * 24 * 60 * 60 * 1000);
 
+  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
   const sql = `
     INSERT OR REPLACE INTO daily_stats (date, device_id, provider_id, model, request_count, input_tokens, output_tokens, total_tokens, cost_usd, cache_hit_count, cost_saved_usd, avg_latency_ms, error_count)
     SELECT 
-      strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) as date,
+      strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', '${safeTz}')) as date,
       device_id,
       provider_id,
       model,
