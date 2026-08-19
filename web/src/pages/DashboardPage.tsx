@@ -1,37 +1,40 @@
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, fmtNum, fmtTime } from "../api/client";
 import type { StatsResponse, UsageItem } from "../types";
 import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
 import { IconActivity, IconZap, IconTerminal } from "../components/icons";
+import { useQuery } from "../hooks/useQuery";
+
+interface DashboardData {
+  stats: Record<string, StatsResponse>;
+  recent: UsageItem[];
+  gatewayUrl: string;
+}
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Record<string, StatsResponse>>({});
-  const [recent, setRecent] = useState<UsageItem[]>([]);
-  const [gatewayUrl, setGatewayUrl] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [today, d7, d30, usage, settings] = await Promise.all([
-          api.get<StatsResponse>("/api/usage/stats?range=today"),
-          api.get<StatsResponse>("/api/usage/stats?range=7d"),
-          api.get<StatsResponse>("/api/usage/stats?range=30d"),
-          api.get<{ items: UsageItem[] }>("/api/usage?limit=8"),
-          api.get<{ gateway_base_url: string }>("/api/settings").catch(() => ({ gateway_base_url: "" })),
-        ]);
-        setStats({ today, d7, d30 });
-        setRecent(usage.items || []);
-        setGatewayUrl(settings.gateway_base_url || window.location.origin);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchDashboard = useCallback(async (): Promise<DashboardData> => {
+    const [today, d7, d30, usage, settings] = await Promise.all([
+      api.get<StatsResponse>("/api/usage/stats?range=today"),
+      api.get<StatsResponse>("/api/usage/stats?range=7d"),
+      api.get<StatsResponse>("/api/usage/stats?range=30d"),
+      api.get<{ items: UsageItem[] }>("/api/usage?limit=8"),
+      api.get<{ gateway_base_url: string }>("/api/settings").catch(() => ({ gateway_base_url: "" })),
+    ]);
+    return {
+      stats: { today, d7, d30 },
+      recent: usage.items || [],
+      gatewayUrl: settings.gateway_base_url || window.location.origin,
+    };
   }, []);
 
-  if (loading) return <Spinner text="正在加载网关统计…" />;
+  const { data, loading } = useQuery("dashboard-data", fetchDashboard, { ttlMs: 30_000 });
 
+  if (loading && !data) return <Spinner text="正在加载网关统计…" />;
+
+  const stats = data?.stats || {};
+  const recent = data?.recent || [];
+  const gatewayUrl = data?.gatewayUrl || "";
   const t = stats.today?.summary || { request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, error_count: 0 };
   const providerRows = stats.today?.byProvider || [];
   const modelRows = stats.today?.byModel || [];

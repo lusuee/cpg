@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
 import { IconPlus, IconEdit, IconTrash, IconProviders } from "../components/icons";
+import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
   id?: string;
@@ -24,21 +25,16 @@ const emptyForm: FormState = {
 };
 
 export default function ProvidersPage() {
-  const [items, setItems] = useState<Provider[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchProviders = useCallback(async () => {
+    const res = await api.get<{ items: Provider[] }>("/api/providers");
+    return res.items || [];
+  }, []);
+
+  const { data: items = [], loading, refresh } = useQuery("providers-list", fetchProviders);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  const refresh = async () => {
-    const res = await api.get<{ items: Provider[] }>("/api/providers");
-    setItems(res.items);
-  };
-
-  useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, []);
 
   function openCreate() {
     setForm(emptyForm);
@@ -68,6 +64,8 @@ export default function ProvidersPage() {
       if (form.id) await api.put(`/api/providers/${form.id}`, serialize(form));
       else await api.post("/api/providers", serialize(form));
       setShow(false);
+      invalidateCache("models-");
+      invalidateCache("dashboard-");
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "保存失败");
@@ -80,13 +78,15 @@ export default function ProvidersPage() {
     if (!confirm(`确认删除 Provider「${p.name}」？关联的模型可能会受影响。`)) return;
     try {
       await api.del(`/api/providers/${p.id}`);
+      invalidateCache("models-");
+      invalidateCache("dashboard-");
       await refresh();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "删除失败");
     }
   }
 
-  if (loading) return <Spinner text="正在加载 Provider 列表…" />;
+  if (loading && !items.length) return <Spinner text="正在加载 Provider 列表…" />;
 
   return (
     <div className="space-y-6">

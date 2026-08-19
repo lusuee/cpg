@@ -3,16 +3,23 @@ import { api, fmtNum, fmtTime } from "../api/client";
 import type { Provider, UsageItem } from "../types";
 import { Badge, Button, Card, Empty, Input, Select, Spinner, CopyButton } from "../components/ui";
 import { IconUsage, IconSearch, IconRefresh } from "../components/icons";
+import { useQuery, getCacheData, setCacheData } from "../hooks/useQuery";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function UsagePage() {
-  const [items, setItems] = useState<UsageItem[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
+  const fetchProviders = useCallback(async () => {
+    const res = await api.get<{ items: Provider[] }>("/api/providers");
+    return res.items || [];
+  }, []);
+  const { data: providers = [] } = useQuery("providers-list", fetchProviders);
+
   const [range, setRange] = useState("24h");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
-  const [loading, setLoading] = useState(true);
+
+  const [items, setItems] = useState<UsageItem[]>(() => getCacheData("usage-page-items") || []);
+  const [loading, setLoading] = useState(() => !getCacheData("usage-page-items"));
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
@@ -34,11 +41,12 @@ export default function UsagePage() {
   );
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    if (!getCacheData("usage-page-items")) setLoading(true);
     setError("");
     try {
       const res = await api.get<{ items: UsageItem[] }>(`/api/usage?${buildQuery(0)}`);
       setItems(res.items || []);
+      setCacheData("usage-page-items", res.items || []);
       setHasMore((res.items || []).length === 50);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
@@ -51,7 +59,11 @@ export default function UsagePage() {
     setLoadingMore(true);
     try {
       const res = await api.get<{ items: UsageItem[] }>(`/api/usage?${buildQuery(items.length)}`);
-      setItems((prev) => [...prev, ...(res.items || [])]);
+      setItems((prev) => {
+        const updated = [...prev, ...(res.items || [])];
+        setCacheData("usage-page-items", updated);
+        return updated;
+      });
       setHasMore((res.items || []).length === 50);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载更多失败");
@@ -63,13 +75,6 @@ export default function UsagePage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  useEffect(() => {
-    api
-      .get<{ items: Provider[] }>("/api/providers")
-      .then((res) => setProviders(res.items || []))
-      .catch(() => setProviders([]));
-  }, []);
 
   const resetFilters = () => {
     setRange("24h");

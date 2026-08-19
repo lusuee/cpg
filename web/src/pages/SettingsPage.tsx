@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { api } from "../api/client";
 import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
 import { IconTerminal, IconShield, IconZap } from "../components/icons";
+import { useQuery } from "../hooks/useQuery";
 
 interface SettingsData {
   app_name: string;
@@ -17,19 +18,15 @@ interface SettingsData {
 }
 
 export default function SettingsPage() {
-  const [data, setData] = useState<SettingsData | null>(null);
-  const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "curl">("openai");
-
-  useEffect(() => {
-    api
-      .get<SettingsData>("/api/settings")
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : "加载失败"));
+  const fetchSettings = useCallback(async () => {
+    return await api.get<SettingsData>("/api/settings");
   }, []);
 
-  if (!data && !error) return <Spinner text="正在加载系统设置…" />;
-  if (error) return <div className="text-xs text-rose-600 bg-rose-50 p-4 rounded-xl">{error}</div>;
+  const { data, loading, error } = useQuery("settings-data", fetchSettings);
+  const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "curl">("openai");
+
+  if (loading && !data) return <Spinner text="正在加载系统设置…" />;
+  if (error && !data) return <div className="text-xs text-rose-600 bg-rose-50 p-4 rounded-xl">{error.message}</div>;
 
   const baseUrl = data?.gateway_base_url || window.location.origin;
 

@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError, fmtTime } from "../api/client";
 import type { DeviceItem } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Spinner, CopyButton } from "../components/ui";
 import { IconPlus, IconDevices, IconShield, IconCopy } from "../components/icons";
+import { useQuery } from "../hooks/useQuery";
 
 interface CreateResponse {
   item: DeviceItem;
@@ -10,22 +11,17 @@ interface CreateResponse {
 }
 
 export default function DevicesPage() {
-  const [items, setItems] = useState<DeviceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchDevices = useCallback(async () => {
+    const res = await api.get<{ items: DeviceItem[] }>("/api/devices");
+    return res.items || [];
+  }, []);
+
+  const { data: items = [], loading, refresh } = useQuery("devices-list", fetchDevices);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [created, setCreated] = useState<CreateResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const refresh = async () => {
-    const res = await api.get<{ items: DeviceItem[] }>("/api/devices");
-    setItems(res.items);
-  };
-
-  useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, []);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -63,7 +59,7 @@ export default function DevicesPage() {
     }
   }
 
-  if (loading) return <Spinner text="正在加载设备 Token 列表…" />;
+  if (loading && !items.length) return <Spinner text="正在加载设备 Token 列表…" />;
 
   return (
     <div className="space-y-6">

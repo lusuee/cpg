@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
 import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch } from "../components/icons";
+import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
   id?: string;
@@ -14,10 +15,27 @@ interface FormState {
   config_json: string;
 }
 
+interface ModelsPageData {
+  items: ModelItem[];
+  providers: Provider[];
+}
+
 export default function ModelsPage() {
-  const [items, setItems] = useState<ModelItem[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchModelsData = useCallback(async (): Promise<ModelsPageData> => {
+    const [m, p] = await Promise.all([
+      api.get<{ items: ModelItem[] }>("/api/models"),
+      api.get<{ items: Provider[] }>("/api/providers"),
+    ]);
+    return {
+      items: m.items || [],
+      providers: p.items || [],
+    };
+  }, []);
+
+  const { data, loading, refresh } = useQuery("models-page-data", fetchModelsData);
+  const items = data?.items || [];
+  const providers = data?.providers || [];
+
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -30,19 +48,6 @@ export default function ModelsPage() {
     enabled: true,
     config_json: "",
   });
-
-  const refresh = async () => {
-    const [m, p] = await Promise.all([
-      api.get<{ items: ModelItem[] }>("/api/models"),
-      api.get<{ items: Provider[] }>("/api/providers"),
-    ]);
-    setItems(m.items);
-    setProviders(p.items);
-  };
-
-  useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, []);
 
   function openCreate() {
     setForm({
@@ -79,6 +84,7 @@ export default function ModelsPage() {
       if (form.id) await api.put(`/api/models/${form.id}`, serialize(form));
       else await api.post("/api/models", serialize(form));
       setShow(false);
+      invalidateCache("dashboard-");
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "保存失败");
@@ -91,13 +97,14 @@ export default function ModelsPage() {
     if (!confirm(`确认删除模型「${m.model_name}」？`)) return;
     try {
       await api.del(`/api/models/${m.id}`);
+      invalidateCache("dashboard-");
       await refresh();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "删除失败");
     }
   }
 
-  if (loading) return <Spinner text="正在加载模型列表…" />;
+  if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
 
   const filteredItems = items.filter(
     (m) =>
