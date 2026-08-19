@@ -4,6 +4,11 @@ import { authenticateGateway } from "./auth";
 import { findModelAndProvider, recordUsageSafe, randomRequestId } from "../db/repo";
 import { parseUsage } from "./usage";
 import { buildUpstreamHeaders, cleanResponseHeaders } from "../utils/http";
+import {
+  convertResponsesRequest,
+  convertChatToResponsesJson,
+  createChatToResponsesTransform,
+} from "./responses_adapter";
 
 const DEFAULT_ENDPOINTS: Record<ProviderType, string> = {
   anthropic: "https://api.anthropic.com/v1",
@@ -123,11 +128,101 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
 
   if (body.model !== row.model_name) body.model = row.model_name;
   const isStream = body.stream === true;
-
-  const target = buildTargetUrl(row, kind);
-  const headers = buildUpstreamHeaders(c.req.raw.headers, row.provider_type, upstreamKey);
+  const requestId = randomRequestId();
   const startedAt = Date.now();
 
+  const headers = buildUpstreamHeaders(c.req.raw.headers, row.provider_type, upstreamKey);
+
+  // For responses kind: if upstream is an OpenAI provider, attempt /responses first.
+  // If upstream returns 404/405 (e.g. DeepSeek/OneAPI which only have /chat/completions),
+  // automatically adapt and proxy through /chat/completions.
+  if (kind === "responses") {
+    let target = buildTargetUrl(row, "responses");
+    let reqBody = body;
+    let upstreamRes = await fetch(target, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(reqBody),
+      redirect: "follow",
+    });
+
+    if (upstreamRes.status === 404 || upstreamRes.status === 405) {
+      // Fallback: convert to /chat/completions
+      target = buildTargetUrl(row, "chat/completions");
+      const chatBody = convertResponsesRequest(body);
+      upstreamRes = await fetch(target, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(chatBody),
+        redirect: "follow",
+      });
+
+      const pctx: ProxyContext = {
+        c,
+        kind,
+        startedAt,
+        device,
+        row,
+        upstreamStatus: upstreamRes.status,
+        latencyMs: Date.now() - startedAt,
+        requestId,
+        createdAt: startedAt,
+      };
+
+      if (upstreamRes.ok) {
+        if (isStream && upstreamRes.body) {
+          let fullOutput = "";
+          const transform = createChatToResponsesTransform(requestId, row.model_name, (text) => {
+            fullOutput = text;
+          });
+          const readable = upstreamRes.body.pipeThrough(transform);
+          const outHeaders = cleanResponseHeaders(upstreamRes.headers);
+          outHeaders.set("content-type", "text/event-stream; charset=utf-8");
+          outHeaders.set("cache-control", "no-cache");
+
+          waitUntil(
+            c,
+            record(pctx, { input_tokens: 0, output_tokens: Math.ceil(fullOutput.length / 4), total_tokens: Math.ceil(fullOutput.length / 4) }, upstreamRes.status)
+          );
+
+          return new Response(readable, { status: 200, headers: outHeaders });
+        } else {
+          const chatJson: any = await upstreamRes.json();
+          pctx.latencyMs = Date.now() - startedAt;
+          const responsesJson = convertChatToResponsesJson(chatJson, requestId);
+          const usage = chatJson.usage || null;
+          waitUntil(c, record(pctx, usage, upstreamRes.status));
+          return c.json(responsesJson, 200);
+        }
+      }
+    }
+
+    const pctx: ProxyContext = {
+      c,
+      kind,
+      startedAt,
+      device,
+      row,
+      upstreamStatus: upstreamRes.status,
+      latencyMs: Date.now() - startedAt,
+      requestId,
+      createdAt: startedAt,
+    };
+
+    if (isStream) return passthroughStream(pctx, upstreamRes);
+
+    const text = await upstreamRes.text();
+    pctx.latencyMs = Date.now() - startedAt;
+    const usage = parseUsage(row.provider_type, text);
+    const res = new Response(text, {
+      status: upstreamRes.status,
+      headers: cleanResponseHeaders(upstreamRes.headers),
+    });
+    waitUntil(pctx.c, record(pctx, usage, upstreamRes.status));
+    return res;
+  }
+
+  const target = buildTargetUrl(row, kind);
   const upstreamRes = await fetch(target, {
     method: "POST",
     headers,
@@ -143,7 +238,7 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
     row,
     upstreamStatus: upstreamRes.status,
     latencyMs: Date.now() - startedAt,
-    requestId: randomRequestId(),
+    requestId,
     createdAt: startedAt,
   };
 

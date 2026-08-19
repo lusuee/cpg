@@ -53,13 +53,9 @@ export function buildUpstreamHeaders(
 export function cleanResponseHeaders(headers: Headers): Headers {
   const out = new Headers();
   headers.forEach((value, key) => {
-    if (BLOCKED_RESPONSE_HEADERS.has(key.toLowerCase())) return;
-    if (key.toLowerCase() === "content-type") return out.set(key, value);
-    if (key.toLowerCase() === "date") return out.set(key, value);
-    if (key.toLowerCase() === "cache-control") return out.set(key, value);
-    if (key.toLowerCase() === "retry-after") return out.set(key, value);
-    if (key.toLowerCase().startsWith("rate-limit-")) return out.append(key, value);
-    if (key.toLowerCase() === "x-request-id") return out.set(key, value);
+    const k = key.toLowerCase();
+    if (BLOCKED_RESPONSE_HEADERS.has(k)) return;
+    out.set(key, value);
   });
   return out;
 }
