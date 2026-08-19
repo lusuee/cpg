@@ -138,16 +138,16 @@ export function createChatToResponsesTransform(
           response_id: responseId,
           output_index: 0,
           item: {
-            id: `msg_${responseId}`,
+            id: `item_${responseId}`,
             type: "message",
             status: "in_progress",
             role: "assistant",
-            content: [{ type: "text", text: "" }],
+            content: [],
           },
         });
         sendEvent(controller, "response.content_part.added", {
           response_id: responseId,
-          item_id: `msg_${responseId}`,
+          item_id: `item_${responseId}`,
           output_index: 0,
           content_index: 0,
           part: { type: "text", text: "" },
@@ -160,14 +160,7 @@ export function createChatToResponsesTransform(
         fullContent += delta;
         sendEvent(controller, "response.output_text.delta", {
           response_id: responseId,
-          item_id: `msg_${responseId}`,
-          output_index: 0,
-          content_index: 0,
-          delta,
-        });
-        sendEvent(controller, "response.text.delta", {
-          response_id: responseId,
-          item_id: `msg_${responseId}`,
+          item_id: `item_${responseId}`,
           output_index: 0,
           content_index: 0,
           delta,
@@ -207,16 +200,16 @@ export function createChatToResponsesTransform(
           response_id: responseId,
           output_index: 0,
           item: {
-            id: `msg_${responseId}`,
+            id: `item_${responseId}`,
             type: "message",
             status: "in_progress",
             role: "assistant",
-            content: [{ type: "text", text: "" }],
+            content: [],
           },
         });
         sendEvent(controller, "response.content_part.added", {
           response_id: responseId,
-          item_id: `msg_${responseId}`,
+          item_id: `item_${responseId}`,
           output_index: 0,
           content_index: 0,
           part: { type: "text", text: "" },
@@ -225,15 +218,7 @@ export function createChatToResponsesTransform(
 
       sendEvent(controller, "response.output_text.done", {
         response_id: responseId,
-        item_id: `msg_${responseId}`,
-        output_index: 0,
-        content_index: 0,
-        text: fullContent,
-      });
-
-      sendEvent(controller, "response.text.done", {
-        response_id: responseId,
-        item_id: `msg_${responseId}`,
+        item_id: `item_${responseId}`,
         output_index: 0,
         content_index: 0,
         text: fullContent,
@@ -241,7 +226,7 @@ export function createChatToResponsesTransform(
 
       sendEvent(controller, "response.content_part.done", {
         response_id: responseId,
-        item_id: `msg_${responseId}`,
+        item_id: `item_${responseId}`,
         output_index: 0,
         content_index: 0,
         part: { type: "text", text: fullContent },
@@ -251,7 +236,7 @@ export function createChatToResponsesTransform(
         response_id: responseId,
         output_index: 0,
         item: {
-          id: `msg_${responseId}`,
+          id: `item_${responseId}`,
           type: "message",
           status: "completed",
           role: "assistant",
@@ -260,7 +245,7 @@ export function createChatToResponsesTransform(
       });
 
       const finalOutputItem = {
-        id: `msg_${responseId}`,
+        id: `item_${responseId}`,
         type: "message",
         status: "completed",
         role: "assistant",
@@ -276,19 +261,9 @@ export function createChatToResponsesTransform(
           output: [finalOutputItem],
           usage: {
             input_tokens: 0,
-            output_tokens: Math.ceil(fullContent.length / 4),
-            total_tokens: Math.ceil(fullContent.length / 4),
+            output_tokens: Math.max(1, Math.ceil(fullContent.length / 4)),
+            total_tokens: Math.max(1, Math.ceil(fullContent.length / 4)),
           },
-        },
-      });
-
-      sendEvent(controller, "response.done", {
-        response: {
-          id: responseId,
-          object: "response",
-          status: "completed",
-          model: modelName,
-          output: [finalOutputItem],
         },
       });
 
