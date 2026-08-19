@@ -94,27 +94,50 @@ export function convertResponsesRequest(body: any): any {
 }
 
 export function convertChatToResponsesJson(chatJson: any, responseId: string): any {
-  const content = chatJson.choices?.[0]?.message?.content || "";
+  const choice = chatJson.choices?.[0];
+  const message = choice?.message;
+  let content = message?.content || choice?.text || "";
+  let reasoning = message?.reasoning_content || message?.reasoning || "";
+
+  // Extract <think>...</think> or <thought>...</thought> if reasoning_content is absent but embedded in content
+  if (!reasoning && typeof content === "string") {
+    const thinkMatch = content.match(/^<(think|thought)>([\s\S]*?)<\/\1>\s*/i);
+    if (thinkMatch) {
+      reasoning = thinkMatch[2].trim();
+      content = content.slice(thinkMatch[0].length);
+    }
+  }
+
+  const output: any[] = [];
+  if (reasoning) {
+    output.push({
+      id: `reasoning_${responseId}`,
+      type: "reasoning",
+      status: "completed",
+      summary: [],
+    });
+  }
+
+  output.push({
+    id: `item_${responseId}`,
+    type: "message",
+    status: "completed",
+    role: "assistant",
+    content: [
+      {
+        type: "output_text",
+        text: content,
+      },
+    ],
+  });
+
   return {
     id: responseId,
     object: "response",
     created_at: Math.floor(Date.now() / 1000),
     status: "completed",
     model: chatJson.model || "openai",
-    output: [
-      {
-        id: `item_${responseId}`,
-        type: "message",
-        status: "completed",
-        role: "assistant",
-        content: [
-          {
-            type: "output_text",
-            text: content,
-          },
-        ],
-      },
-    ],
+    output,
     usage: chatJson.usage,
   };
 }
@@ -128,12 +151,158 @@ export function createChatToResponsesTransform(
   const decoder = new TextDecoder();
   let buffer = "";
   let fullContent = "";
-  let started = false;
+  let fullReasoning = "";
+  let createdSent = false;
+  let reasoningStarted = false;
+  let reasoningDone = false;
+  let messageStarted = false;
+
+  let insideThinkTag = false;
 
   function sendEvent(controller: TransformStreamDefaultController<Uint8Array>, event: string, data: any) {
     const payload = { type: event, ...data };
     const s = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
     controller.enqueue(encoder.encode(s));
+  }
+
+  function ensureCreated(controller: TransformStreamDefaultController<Uint8Array>) {
+    if (!createdSent) {
+      createdSent = true;
+      sendEvent(controller, "response.created", {
+        response: {
+          id: responseId,
+          object: "response",
+          status: "in_progress",
+          model: modelName,
+        },
+      });
+    }
+  }
+
+  function startReasoning(controller: TransformStreamDefaultController<Uint8Array>) {
+    if (!reasoningStarted) {
+      reasoningStarted = true;
+      sendEvent(controller, "response.output_item.added", {
+        response_id: responseId,
+        output_index: 0,
+        item: {
+          id: `reasoning_${responseId}`,
+          type: "reasoning",
+          status: "in_progress",
+          summary: [],
+        },
+      });
+    }
+  }
+
+  function emitReasoningDelta(controller: TransformStreamDefaultController<Uint8Array>, delta: string) {
+    ensureCreated(controller);
+    startReasoning(controller);
+    fullReasoning += delta;
+    sendEvent(controller, "response.reasoning_text.delta", {
+      response_id: responseId,
+      item_id: `reasoning_${responseId}`,
+      output_index: 0,
+      content_index: 0,
+      delta,
+    });
+    sendEvent(controller, "response.reasoning.delta", {
+      response_id: responseId,
+      item_id: `reasoning_${responseId}`,
+      output_index: 0,
+      delta,
+    });
+  }
+
+  function finishReasoning(controller: TransformStreamDefaultController<Uint8Array>) {
+    if (reasoningStarted && !reasoningDone) {
+      reasoningDone = true;
+      sendEvent(controller, "response.output_item.done", {
+        response_id: responseId,
+        output_index: 0,
+        item: {
+          id: `reasoning_${responseId}`,
+          type: "reasoning",
+          status: "completed",
+          summary: [],
+        },
+      });
+    }
+  }
+
+  function startMessage(controller: TransformStreamDefaultController<Uint8Array>) {
+    finishReasoning(controller);
+    if (!messageStarted) {
+      messageStarted = true;
+      const messageIndex = reasoningStarted ? 1 : 0;
+      sendEvent(controller, "response.output_item.added", {
+        response_id: responseId,
+        output_index: messageIndex,
+        item: {
+          id: `item_${responseId}`,
+          type: "message",
+          status: "in_progress",
+          role: "assistant",
+          content: [],
+        },
+      });
+      sendEvent(controller, "response.content_part.added", {
+        response_id: responseId,
+        item_id: `item_${responseId}`,
+        output_index: messageIndex,
+        content_index: 0,
+        part: { type: "output_text", text: "" },
+      });
+    }
+  }
+
+  function emitContentDelta(controller: TransformStreamDefaultController<Uint8Array>, delta: string) {
+    ensureCreated(controller);
+    startMessage(controller);
+    fullContent += delta;
+    const messageIndex = reasoningStarted ? 1 : 0;
+    sendEvent(controller, "response.output_text.delta", {
+      response_id: responseId,
+      item_id: `item_${responseId}`,
+      output_index: messageIndex,
+      content_index: 0,
+      delta,
+    });
+  }
+
+  function handleContentChunk(controller: TransformStreamDefaultController<Uint8Array>, text: string) {
+    let remaining = text;
+
+    while (remaining.length > 0) {
+      if (insideThinkTag) {
+        const closeTagMatch = remaining.match(/<\/(think|thought)>/i);
+        if (closeTagMatch && closeTagMatch.index !== undefined) {
+          const thinkContent = remaining.slice(0, closeTagMatch.index);
+          if (thinkContent) {
+            emitReasoningDelta(controller, thinkContent);
+          }
+          finishReasoning(controller);
+          insideThinkTag = false;
+          remaining = remaining.slice(closeTagMatch.index + closeTagMatch[0].length);
+        } else {
+          emitReasoningDelta(controller, remaining);
+          remaining = "";
+        }
+      } else {
+        const openTagMatch = remaining.match(/<(think|thought)>/i);
+        if (openTagMatch && openTagMatch.index !== undefined) {
+          const preContent = remaining.slice(0, openTagMatch.index);
+          if (preContent) {
+            emitContentDelta(controller, preContent);
+          }
+          insideThinkTag = true;
+          remaining = remaining.slice(openTagMatch.index + openTagMatch[0].length);
+        } else {
+          emitContentDelta(controller, remaining);
+          remaining = "";
+        }
+      }
+    }
   }
 
   function processLine(controller: TransformStreamDefaultController<Uint8Array>, line: string) {
@@ -144,47 +313,21 @@ export function createChatToResponsesTransform(
 
     try {
       const parsed = JSON.parse(payload);
-      if (!started) {
-        started = true;
-        sendEvent(controller, "response.created", {
-          response: {
-            id: responseId,
-            object: "response",
-            status: "in_progress",
-            model: modelName,
-          },
-        });
-        sendEvent(controller, "response.output_item.added", {
-          response_id: responseId,
-          output_index: 0,
-          item: {
-            id: `item_${responseId}`,
-            type: "message",
-            status: "in_progress",
-            role: "assistant",
-            content: [],
-          },
-        });
-        sendEvent(controller, "response.content_part.added", {
-          response_id: responseId,
-          item_id: `item_${responseId}`,
-          output_index: 0,
-          content_index: 0,
-          part: { type: "output_text", text: "" },
-        });
-      }
+      ensureCreated(controller);
 
       const choice = parsed.choices?.[0];
-      const delta = choice?.delta?.content ?? choice?.text ?? choice?.delta?.reasoning_content ?? "";
-      if (delta && typeof delta === "string") {
-        fullContent += delta;
-        sendEvent(controller, "response.output_text.delta", {
-          response_id: responseId,
-          item_id: `item_${responseId}`,
-          output_index: 0,
-          content_index: 0,
-          delta,
-        });
+      const delta = choice?.delta;
+
+      // 1. Handle explicit reasoning deltas (DeepSeek-R1, Gemini Thinking, etc.)
+      const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning ?? "";
+      if (reasoningDelta && typeof reasoningDelta === "string") {
+        emitReasoningDelta(controller, reasoningDelta);
+      }
+
+      // 2. Handle standard content deltas
+      const contentDelta = delta?.content ?? choice?.text ?? "";
+      if (contentDelta && typeof contentDelta === "string") {
+        handleContentChunk(controller, contentDelta);
       }
     } catch {
       // ignore parse errors on fragmented chunks
@@ -206,40 +349,19 @@ export function createChatToResponsesTransform(
         processLine(controller, buffer);
       }
 
-      if (!started) {
-        started = true;
-        sendEvent(controller, "response.created", {
-          response: {
-            id: responseId,
-            object: "response",
-            status: "in_progress",
-            model: modelName,
-          },
-        });
-        sendEvent(controller, "response.output_item.added", {
-          response_id: responseId,
-          output_index: 0,
-          item: {
-            id: `item_${responseId}`,
-            type: "message",
-            status: "in_progress",
-            role: "assistant",
-            content: [],
-          },
-        });
-        sendEvent(controller, "response.content_part.added", {
-          response_id: responseId,
-          item_id: `item_${responseId}`,
-          output_index: 0,
-          content_index: 0,
-          part: { type: "output_text", text: "" },
-        });
+      ensureCreated(controller);
+      finishReasoning(controller);
+
+      if (!messageStarted) {
+        startMessage(controller);
       }
+
+      const messageIndex = reasoningStarted ? 1 : 0;
 
       sendEvent(controller, "response.output_text.done", {
         response_id: responseId,
         item_id: `item_${responseId}`,
-        output_index: 0,
+        output_index: messageIndex,
         content_index: 0,
         text: fullContent,
       });
@@ -247,24 +369,12 @@ export function createChatToResponsesTransform(
       sendEvent(controller, "response.content_part.done", {
         response_id: responseId,
         item_id: `item_${responseId}`,
-        output_index: 0,
+        output_index: messageIndex,
         content_index: 0,
         part: { type: "output_text", text: fullContent },
       });
 
-      sendEvent(controller, "response.output_item.done", {
-        response_id: responseId,
-        output_index: 0,
-        item: {
-          id: `item_${responseId}`,
-          type: "message",
-          status: "completed",
-          role: "assistant",
-          content: [{ type: "output_text", text: fullContent }],
-        },
-      });
-
-      const finalOutputItem = {
+      const messageOutputItem = {
         id: `item_${responseId}`,
         type: "message",
         status: "completed",
@@ -272,13 +382,30 @@ export function createChatToResponsesTransform(
         content: [{ type: "output_text", text: fullContent }],
       };
 
+      sendEvent(controller, "response.output_item.done", {
+        response_id: responseId,
+        output_index: messageIndex,
+        item: messageOutputItem,
+      });
+
+      const outputItems: any[] = [];
+      if (reasoningStarted) {
+        outputItems.push({
+          id: `reasoning_${responseId}`,
+          type: "reasoning",
+          status: "completed",
+          summary: [],
+        });
+      }
+      outputItems.push(messageOutputItem);
+
       sendEvent(controller, "response.completed", {
         response: {
           id: responseId,
           object: "response",
           status: "completed",
           model: modelName,
-          output: [finalOutputItem],
+          output: outputItems,
           usage: {
             input_tokens: 0,
             output_tokens: Math.max(1, Math.ceil(fullContent.length / 4)),

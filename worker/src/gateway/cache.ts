@@ -176,16 +176,20 @@ export function createCachedResponse(
     ];
     sseBody = events.join("");
   } else if (kind === "responses") {
-    const text = payload.jsonBody?.output?.[0]?.content?.[0]?.text || "";
+    const messageItem = Array.isArray(payload.jsonBody?.output)
+      ? payload.jsonBody.output.find((it: any) => it.type === "message") || payload.jsonBody.output[0]
+      : null;
+    const text = messageItem?.content?.[0]?.text || "";
     const respId = payload.jsonBody?.id || `resp_${requestId}`;
     const events = [
       `event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { id: respId, object: "response", status: "in_progress", model: modelName } })}\n\n`,
       `event: response.output_item.added\ndata: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item: { id: `item_${requestId}`, type: "message", role: "assistant", content: [] } })}\n\n`,
-      `event: response.content_part.added\ndata: ${JSON.stringify({ type: "response.content_part.added", output_index: 0, content_index: 0, part: { type: "text", text: "" } })}\n\n`,
-      `event: response.text.delta\ndata: ${JSON.stringify({ type: "response.text.delta", output_index: 0, content_index: 0, delta: text })}\n\n`,
-      `event: response.text.done\ndata: ${JSON.stringify({ type: "response.text.done", output_index: 0, content_index: 0, text })}\n\n`,
-      `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item: { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "text", text }] } })}\n\n`,
-      `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { id: respId, object: "response", status: "completed", model: modelName, usage: payload.usage } })}\n\n`,
+      `event: response.content_part.added\ndata: ${JSON.stringify({ type: "response.content_part.added", output_index: 0, content_index: 0, part: { type: "output_text", text: "" } })}\n\n`,
+      `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, delta: text })}\n\n`,
+      `event: response.output_text.done\ndata: ${JSON.stringify({ type: "response.output_text.done", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, text })}\n\n`,
+      `event: response.content_part.done\ndata: ${JSON.stringify({ type: "response.content_part.done", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, part: { type: "output_text", text } })}\n\n`,
+      `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item: { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] } })}\n\n`,
+      `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { id: respId, object: "response", status: "completed", model: modelName, output: [messageItem || { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] }], usage: payload.usage } })}\n\n`,
     ];
     sseBody = events.join("");
   }
