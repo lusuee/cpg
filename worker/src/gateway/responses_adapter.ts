@@ -115,7 +115,7 @@ export function createChatToResponsesTransform(
             type: "message",
             status: "in_progress",
             role: "assistant",
-            content: [],
+            content: [{ type: "text", text: "" }],
           },
         });
         sendEvent(controller, "response.content_part.added", {
@@ -127,10 +127,18 @@ export function createChatToResponsesTransform(
         });
       }
 
-      const delta = parsed.choices?.[0]?.delta?.content || "";
-      if (delta) {
+      const choice = parsed.choices?.[0];
+      const delta = choice?.delta?.content ?? choice?.text ?? choice?.delta?.reasoning_content ?? "";
+      if (delta && typeof delta === "string") {
         fullContent += delta;
         sendEvent(controller, "response.output_text.delta", {
+          response_id: responseId,
+          item_id: `msg_${responseId}`,
+          output_index: 0,
+          content_index: 0,
+          delta,
+        });
+        sendEvent(controller, "response.text.delta", {
           response_id: responseId,
           item_id: `msg_${responseId}`,
           output_index: 0,
@@ -176,7 +184,7 @@ export function createChatToResponsesTransform(
             type: "message",
             status: "in_progress",
             role: "assistant",
-            content: [],
+            content: [{ type: "text", text: "" }],
           },
         });
         sendEvent(controller, "response.content_part.added", {
@@ -189,6 +197,14 @@ export function createChatToResponsesTransform(
       }
 
       sendEvent(controller, "response.output_text.done", {
+        response_id: responseId,
+        item_id: `msg_${responseId}`,
+        output_index: 0,
+        content_index: 0,
+        text: fullContent,
+      });
+
+      sendEvent(controller, "response.text.done", {
         response_id: responseId,
         item_id: `msg_${responseId}`,
         output_index: 0,
