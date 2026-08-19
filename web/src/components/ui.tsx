@@ -1,26 +1,63 @@
-import type { ReactNode, SelectHTMLAttributes, InputHTMLAttributes, ButtonHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useState, type ReactNode, type SelectHTMLAttributes, type InputHTMLAttributes, type ButtonHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { IconCheck, IconCopy } from "./icons";
 
-export function Card({ title, children, className = "" }: { title?: ReactNode; children: ReactNode; className?: string }) {
+export function Card({
+  title,
+  action,
+  children,
+  className = "",
+}: {
+  title?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>
-      {title ? <div className="px-4 py-3 border-b border-slate-100 font-medium text-slate-700">{title}</div> : null}
-      <div className="p-4">{children}</div>
+    <div className={`bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden ${className}`}>
+      {title || action ? (
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+          {title ? <div className="font-semibold text-slate-800 text-sm tracking-tight">{title}</div> : <div />}
+          {action ? <div>{action}</div> : null}
+        </div>
+      ) : null}
+      <div className="p-5">{children}</div>
     </div>
   );
 }
 
-export function Button({ children, variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "danger" | "secondary" }) {
-  const cls =
+export function Button({
+  children,
+  variant = "primary",
+  size = "md",
+  className = "",
+  disabled,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "ghost" | "danger" | "secondary" | "outline";
+  size?: "sm" | "md" | "lg";
+}) {
+  const sizeCls =
+    size === "sm"
+      ? "px-2.5 py-1 text-xs gap-1.5"
+      : size === "lg"
+      ? "px-4 py-2 text-base gap-2"
+      : "px-3.5 py-1.5 text-sm gap-2";
+
+  const variantCls =
     variant === "primary"
-      ? "bg-blue-600 hover:bg-blue-700 text-white"
+      ? "bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm shadow-blue-600/20"
       : variant === "danger"
-      ? "bg-red-600 hover:bg-red-700 text-white"
+      ? "bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-sm shadow-red-600/20"
       : variant === "secondary"
-      ? "bg-slate-100 hover:bg-slate-200 text-slate-700"
+      ? "bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700"
+      : variant === "outline"
+      ? "border border-slate-200 hover:bg-slate-50 text-slate-700"
       : "bg-transparent hover:bg-slate-100 text-slate-600";
+
   return (
     <button
-      className={`inline-flex items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${cls}`}
+      className={`inline-flex items-center justify-center font-medium rounded-lg transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none ${sizeCls} ${variantCls} ${className}`}
+      disabled={disabled}
       {...props}
     >
       {children}
@@ -29,50 +66,147 @@ export function Button({ children, variant = "primary", ...props }: ButtonHTMLAt
 }
 
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none ${className}`} {...props} />;
+  return (
+    <input
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-50 disabled:text-slate-400 ${className}`}
+      {...props}
+    />
+  );
 }
 
 export function Select({ className = "", children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={`w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none ${className}`} {...props}>
+    <select
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-50 ${className}`}
+      {...props}
+    >
       {children}
     </select>
   );
 }
 
 export function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none ${className}`} {...props} />;
+  return (
+    <textarea
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 font-mono transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-50 ${className}`}
+      {...props}
+    />
+  );
 }
 
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  maxWidth = "max-w-lg",
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  maxWidth?: string;
+}) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h3 className="font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className={`w-full ${maxWidth} rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden transform transition-all animate-in zoom-in-95 duration-150`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-slate-50/50">
+          <h3 className="font-semibold text-slate-800 text-base">{title}</h3>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            ✕
+          </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-5">{children}</div>
       </div>
     </div>
   );
 }
 
-export function Badge({ tone = "slate", children }: { tone?: "green" | "red" | "slate" | "blue"; children: ReactNode }) {
+export function Badge({
+  tone = "slate",
+  children,
+  dot = false,
+}: {
+  tone?: "green" | "red" | "slate" | "blue" | "amber" | "purple";
+  children: ReactNode;
+  dot?: boolean;
+}) {
   const tones = {
-    green: "bg-emerald-100 text-emerald-700",
-    red: "bg-red-100 text-red-700",
-    slate: "bg-slate-100 text-slate-600",
-    blue: "bg-blue-100 text-blue-700",
+    green: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20",
+    red: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20",
+    slate: "bg-slate-100 text-slate-600 ring-1 ring-slate-400/20",
+    blue: "bg-blue-50 text-blue-700 ring-1 ring-blue-600/20",
+    amber: "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20",
+    purple: "bg-purple-50 text-purple-700 ring-1 ring-purple-600/20",
   };
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+
+  const dots = {
+    green: "bg-emerald-500",
+    red: "bg-rose-500",
+    slate: "bg-slate-400",
+    blue: "bg-blue-500",
+    amber: "bg-amber-500",
+    purple: "bg-purple-500",
+  };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tones[tone]}`}>
+      {dot ? <span className={`w-1.5 h-1.5 rounded-full ${dots[tone]}`} /> : null}
+      {children}
+    </span>
+  );
 }
 
-export function Empty({ text = "暂无数据" }: { text?: string }) {
-  return <div className="py-10 text-center text-slate-400">{text}</div>;
+export function CopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors p-1 rounded hover:bg-slate-100"
+      title="复制"
+    >
+      {copied ? <IconCheck className="text-emerald-600" /> : <IconCopy />}
+      {label ? <span>{copied ? "已复制" : label}</span> : null}
+    </button>
+  );
 }
 
-export function Spinner() {
-  return <div className="flex items-center justify-center py-10 text-slate-400">加载中…</div>;
+export function Empty({ text = "暂无数据", icon }: { text?: string; icon?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+      {icon ? <div className="mb-2 text-slate-300">{icon}</div> : null}
+      <div className="text-sm font-medium">{text}</div>
+    </div>
+  );
+}
+
+export function Spinner({ text = "加载中…" }: { text?: string }) {
+  return (
+    <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+      <div className="w-5 h-5 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+      <span className="text-sm">{text}</span>
+    </div>
+  );
 }

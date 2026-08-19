@@ -87,13 +87,47 @@ async function prepareD1Id(env) {
     const m = toml.match(/database_id\s*=\s*"([^"]+)"/);
     id = m ? m[1] : "";
   }
-  if (!id) throw new Error("Cannot find database_id in worker/wrangler.toml");
-  if (id === PLACEHOLDER_ID) {
-    throw new Error("worker/wrangler.toml still has the placeholder D1 id. Set D1_DATABASE_ID in deploy.env (or export it) to the id shown in Cloudflare console.");
+
+  if (!id || id === PLACEHOLDER_ID) {
+    logStep(`Checking or auto-creating D1 database "${D1_NAME}" via Wrangler`);
+    const listRes = await runWrangler(["d1", "list", "--json"]);
+    let foundId = "";
+    if (listRes.code === 0 && listRes.stdout) {
+      try {
+        const jsonMatch = listRes.stdout.match(/\[\s*\{.*\}\s*\]/s);
+        if (jsonMatch) {
+          const list = JSON.parse(jsonMatch[0]);
+          const found = list.find((db) => db.name === D1_NAME);
+          if (found && (found.uuid || found.database_id)) {
+            foundId = found.uuid || found.database_id;
+            console.log(`Found existing D1 database "${D1_NAME}": ${mask(foundId)}`);
+          }
+        }
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
+    if (!foundId) {
+      logStep(`Creating D1 database "${D1_NAME}" automatically...`);
+      const createRes = await runWrangler(["d1", "create", D1_NAME]);
+      const match =
+        createRes.stdout.match(/database_id\s*=\s*"([0-9a-f-]{36})"/i) ||
+        createRes.stdout.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      if (match) {
+        foundId = match[1];
+        console.log(`Successfully created D1 database "${D1_NAME}": ${mask(foundId)}`);
+      } else {
+        throw new Error(`Failed to create or parse D1 database ID. Wrangler output:\n${createRes.stdout || createRes.stderr}`);
+      }
+    }
+    id = foundId;
   }
+
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     throw new Error(`Invalid D1 database id: ${mask(id)}`);
   }
+
   if (!toml.includes(`database_id = "${id}"`)) {
     toml = patchToml(toml, "database_id", id);
     writeFileSync(wranglerToml, toml, "utf8");

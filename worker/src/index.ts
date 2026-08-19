@@ -2,8 +2,19 @@ import { Hono } from "hono";
 import type { Env } from "./types";
 import { adminApp } from "./admin";
 import { gatewayApp } from "./gateway";
+import { ensureSchema } from "./db/schema";
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.use("/api/*", async (c, next) => {
+  await ensureSchema(c.env);
+  return next();
+});
+
+app.use("/v1/*", async (c, next) => {
+  await ensureSchema(c.env);
+  return next();
+});
 
 app.get("/health", (c) => c.json({ ok: true, service: "personal-ai-gateway" }));
 

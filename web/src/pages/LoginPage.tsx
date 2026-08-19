@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { Button, Input } from "../components/ui";
 import { ApiError } from "../api/client";
+import { IconZap, IconShield } from "../components/icons";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,23 +20,57 @@ export default function LoginPage() {
       await login(password);
       nav("/dashboard");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "登录失败，请稍后再试");
+      setError(err instanceof ApiError ? err.message : "登录失败，请检查密码");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100">
-      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-lg font-semibold text-slate-800">AI Gateway 管理</h1>
-        <label className="block text-sm font-medium text-slate-600">
-          管理密码
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
-        </label>
-        {error ? <div className="text-sm text-red-600">{error}</div> : null}
-        <Button disabled={busy} className="w-full justify-center">{busy ? "登录中…" : "登录"}</Button>
-      </form>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50/30 p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-lg shadow-blue-500/25 mb-4">
+            <IconZap className="w-6 h-6 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">AI Gateway</h1>
+          <p className="text-xs text-slate-500 mt-1">请输入管理员密码访问控制台</p>
+        </div>
+
+        <form
+          onSubmit={onSubmit}
+          className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50 backdrop-blur-sm"
+        >
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              管理端密码 (ADMIN_SECRET)
+            </label>
+            <Input
+              type="password"
+              placeholder="••••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+
+          {error ? (
+            <div className="text-xs text-rose-600 bg-rose-50 border border-rose-100 p-2.5 rounded-lg flex items-center gap-1.5 animate-in fade-in">
+              <span>{error}</span>
+            </div>
+          ) : null}
+
+          <Button disabled={busy} className="w-full justify-center py-2 text-sm shadow-md" size="lg">
+            {busy ? "正在验证…" : "进入管理端"}
+          </Button>
+
+          <div className="pt-2 text-center flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+            <IconShield className="w-3.5 h-3.5" />
+            <span>端到端 HMAC 安全签名会话</span>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

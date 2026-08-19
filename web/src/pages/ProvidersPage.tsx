@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
+import { IconPlus, IconEdit, IconTrash, IconProviders } from "../components/icons";
 
 interface FormState {
   id?: string;
@@ -13,7 +14,14 @@ interface FormState {
   config_json: string;
 }
 
-const emptyForm: FormState = { name: "", type: "openai", endpoint: "", secret_name: "", enabled: true, config_json: "" };
+const emptyForm: FormState = {
+  name: "",
+  type: "openai",
+  endpoint: "",
+  secret_name: "",
+  enabled: true,
+  config_json: "",
+};
 
 export default function ProvidersPage() {
   const [items, setItems] = useState<Provider[]>([]);
@@ -21,14 +29,23 @@ export default function ProvidersPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const refresh = async () => setItems((await api.get<{ items: Provider[] }>("/api/providers")).items);
+  const refresh = async () => {
+    const res = await api.get<{ items: Provider[] }>("/api/providers");
+    setItems(res.items);
+  };
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
   }, []);
 
-  function openCreate() { setForm(emptyForm); setError(""); setShow(true); }
+  function openCreate() {
+    setForm(emptyForm);
+    setError("");
+    setShow(true);
+  }
+
   function openEdit(p: Provider) {
     setForm({
       id: p.id,
@@ -46,6 +63,7 @@ export default function ProvidersPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     try {
       if (form.id) await api.put(`/api/providers/${form.id}`, serialize(form));
       else await api.post("/api/providers", serialize(form));
@@ -53,11 +71,13 @@ export default function ProvidersPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "保存失败");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function onDelete(p: Provider) {
-    if (!confirm(`确认删除 ${p.name}？`)) return;
+    if (!confirm(`确认删除 Provider「${p.name}」？关联的模型可能会受影响。`)) return;
     try {
       await api.del(`/api/providers/${p.id}`);
       await refresh();
@@ -66,60 +86,160 @@ export default function ProvidersPage() {
     }
   }
 
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner text="正在加载 Provider 列表…" />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Provider 管理</h1>
-        <Button onClick={openCreate}>新增 Provider</Button>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">上游 Provider 管理</h2>
+          <p className="text-xs text-slate-500 mt-1">配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic 协议）及其 API 密钥与地址</p>
+        </div>
+        <Button onClick={openCreate} className="shadow-sm">
+          <IconPlus />
+          <span>新增 Provider</span>
+        </Button>
       </div>
-      <Card>
+
+      <Card className="overflow-x-auto">
         {items.length ? (
-          <table className="w-full text-sm">
+          <table className="w-full text-left text-xs sm:text-sm">
             <thead>
-              <tr className="text-left text-slate-500">
-                <th>名称</th><th>类型</th><th>Endpoint</th><th>Secret</th><th>状态</th><th className="text-right">操作</th>
+              <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                <th className="pb-3 px-2">名称</th>
+                <th className="pb-3 px-2">协议类型</th>
+                <th className="pb-3 px-2">自定义 Endpoint</th>
+                <th className="pb-3 px-2">Secret 密钥</th>
+                <th className="pb-3 px-2">运行状态</th>
+                <th className="pb-3 px-2 text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {items.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="py-2 font-medium">{p.name}</td>
-                  <td>{p.type}</td>
-                  <td className="max-w-56 truncate text-slate-500">{p.endpoint || "默认"}</td>
-                  <td>
-                    {p.secret_name ? (
-                      <Badge tone={p.secret_configured ? "green" : "red"}>{p.secret_configured ? "已配置" : "未配置"}</Badge>
-                    ) : <Badge>无</Badge>}
+                <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="py-3 px-2 font-semibold text-slate-900">{p.name}</td>
+                  <td className="py-3 px-2">
+                    <Badge tone={p.type === "anthropic" ? "purple" : "blue"}>
+                      {p.type === "anthropic" ? "Anthropic" : "OpenAI"}
+                    </Badge>
                   </td>
-                  <td>{p.enabled ? <Badge tone="green">启用</Badge> : <Badge tone="red">禁用</Badge>}</td>
-                  <td className="text-right">
-                    <Button variant="ghost" onClick={() => openEdit(p)}>编辑</Button>
-                    <Button variant="danger" onClick={() => onDelete(p)}>删除</Button>
+                  <td className="py-3 px-2 font-mono text-slate-500 text-xs max-w-xs truncate">
+                    {p.endpoint || <span className="text-slate-400 italic">官方默认</span>}
+                  </td>
+                  <td className="py-3 px-2">
+                    {p.secret_name ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs text-slate-700">{p.secret_name}</span>
+                        <Badge tone={p.secret_configured ? "green" : "red"} dot>
+                          {p.secret_configured ? "有效" : "未绑定"}
+                        </Badge>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-xs">无 Secret</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-2">
+                    <Badge tone={p.enabled ? "green" : "slate"} dot>
+                      {p.enabled ? "启用" : "已停用"}
+                    </Badge>
+                  </td>
+                  <td className="py-3 px-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
+                        <IconEdit />
+                        <span>编辑</span>
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => onDelete(p)}>
+                        <IconTrash />
+                        <span>删除</span>
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : <Empty />}
+        ) : (
+          <Empty text="尚未添加任何 Provider" icon={<IconProviders className="w-8 h-8" />} />
+        )}
       </Card>
 
       <Modal open={show} onClose={() => setShow(false)} title={form.id ? "编辑 Provider" : "新增 Provider"}>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <label className="block text-sm">名称<Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-          <label className="block text-sm">类型
-            <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as any })}>
-              <option value="openai">OpenAI-compatible</option>
-              <option value="anthropic">Anthropic</option>
-            </Select>
-          </label>
-          <label className="block text-sm">Endpoint（留空使用默认）<Input placeholder="https://api.openai.com/v1" value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} /></label>
-          <label className="block text-sm">Secret 名称<Input placeholder="OPENAI_API_KEY" value={form.secret_name} onChange={(e) => setForm({ ...form, secret_name: e.target.value })} /></label>
-          <label className="block text-sm">config_json <Textarea rows={3} value={form.config_json} onChange={(e) => setForm({ ...form, config_json: e.target.value })} /></label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> 启用</label>
-          {error ? <div className="text-sm text-red-600">{error}</div> : null}
-          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShow(false)}>取消</Button><Button type="submit">保存</Button></div>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Provider 标识名称</label>
+            <Input
+              required
+              placeholder="例如：OpenAI 官方 / DeepSeek / 阶跃星辰"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">协议类型</label>
+              <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as any })}>
+                <option value="openai">OpenAI-compatible</option>
+                <option value="anthropic">Anthropic</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Secret 变量名</label>
+              <Input
+                placeholder="例如 OPENAI_API_KEY"
+                value={form.secret_name}
+                onChange={(e) => setForm({ ...form, secret_name: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              API Base Endpoint <span className="text-slate-400 font-normal">（留空使用官方默认地址）</span>
+            </label>
+            <Input
+              placeholder="https://api.openai.com/v1"
+              value={form.endpoint}
+              onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              高级 JSON 配置 <span className="text-slate-400 font-normal">（可选，JSON 格式）</span>
+            </label>
+            <Textarea
+              rows={3}
+              placeholder="{}"
+              value={form.config_json}
+              onChange={(e) => setForm({ ...form, config_json: e.target.value })}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="provider-enabled"
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+              checked={form.enabled}
+              onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+            />
+            <label htmlFor="provider-enabled" className="text-xs font-medium text-slate-700 cursor-pointer select-none">
+              立即启用此 Provider
+            </label>
+          </div>
+
+          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="secondary" onClick={() => setShow(false)}>
+              取消
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "正在保存…" : "保存"}
+            </Button>
+          </div>
         </form>
       </Modal>
     </div>

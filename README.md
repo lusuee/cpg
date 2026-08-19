@@ -67,18 +67,16 @@ ANTHROPIC_API_KEY=sk-ant-...
 - Provider 表中的 `secret_name` 必须对应 Worker 环境变量/Secret 名称（例如 `OPENAI_API_KEY`）。
 - Provider 创建/编辑后 Dashboard 会显示是否已配置对应 Secret。
 
-## 创建 D1 并部署
+## 快速部署到 Cloudflare
 
-### 一键部署到 Cloudflare
+### 一键全自动部署
 
 ```bash
 # 1. 复制部署配置
 cp deploy.env.example deploy.env
+# 填写 ADMIN_SECRET 与 SESSION_SECRET（D1_DATABASE_ID 留空即可，脚本会自动创建与绑定）
 
-# 2. 在 Cloudflare 后台创建数据库 personal-ai-gateway，
-#    把返回的 database_id 填到 deploy.env 的 D1_DATABASE_ID
-
-# 3. 一键部署（自动：build web → 注入 D1 id/vars → 远程迁移 → 上传 Secrets → wrangler deploy）
+# 2. 执行一键部署（自动：build web → 自动创建/查询 D1 数据库 → 注入 D1 id/vars → 自动迁移 → 上传 Secrets → 部署 Worker）
 pnpm deploy
 ```
 
