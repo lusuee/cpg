@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "pnpm --filter @aigw/web build",
-    "build:web": "pnpm --filter @aigw/web build",
+    "build": "node ../scripts/prepare-config.mjs && pnpm --filter @aigw/web build",
+    "build:web": "node ../scripts/prepare-config.mjs && pnpm --filter @aigw/web build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

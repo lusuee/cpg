@@ -4,7 +4,7 @@
   "private": true,
   "description": "Cloudflare-native personal AI Gateway (V1 MVP)",
   "scripts": {
-    "build:web": "pnpm --filter @aigw/web build",
+    "build:web": "node scripts/prepare-config.mjs && pnpm --filter @aigw/web build",
     "dev:worker": "pnpm --filter @aigw/worker dev",
     "dev:web": "pnpm --filter @aigw/web dev",
     "dev": "pnpm run build:web && pnpm run dev:worker",
