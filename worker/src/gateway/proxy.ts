@@ -539,6 +539,9 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
 }
 
 export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
+  if (c.req.header("accept")?.includes("text/html") && c.env.ASSETS) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
   const device = await authenticateGateway(c);
   if (!device) return c.json({ error: "unauthorized" }, 401);
   const res = await c.env.DB.prepare(

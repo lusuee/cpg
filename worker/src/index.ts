@@ -5,7 +5,22 @@ import { gatewayApp } from "./gateway";
 import { ensureSchema } from "./db/schema";
 import { aggregateDailyStats } from "./db/repo";
 
-const app = new Hono<{ Bindings: Env }>();
+export const app = new Hono<{ Bindings: Env }>();
+
+// Browser HTML navigation & SPA page refresh protection:
+// If a browser sends GET for HTML on any non-API route (e.g. /models, /providers, /settings), serve SPA frontend assets
+app.use("*", async (c, next) => {
+  if (
+    c.req.method === "GET" &&
+    !c.req.path.startsWith("/api/") &&
+    !c.req.path.startsWith("/v1/") &&
+    c.req.header("accept")?.includes("text/html") &&
+    c.env.ASSETS
+  ) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return next();
+});
 
 app.use("/api/*", async (c, next) => {
   await ensureSchema(c.env);
@@ -25,7 +40,10 @@ app.route("/", gatewayApp);
 
 // Serve the built web dashboard (SPA fallback handled by [assets] config).
 app.all("*", async (c) => {
-  return c.env.ASSETS.fetch(c.req.raw);
+  if (c.env.ASSETS) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return c.json({ error: "not_found" }, 404);
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
