@@ -764,10 +764,10 @@ export default function ModelsPage() {
 function serialize(f: FormState) {
   return {
     provider_id: f.provider_id,
-    model_name: f.model_name,
-    display_name: f.display_name || undefined,
-    alias: f.alias || undefined,
+    model_name: f.model_name.trim(),
+    display_name: f.display_name?.trim() || null,
+    alias: f.alias?.trim() || null,
     enabled: f.enabled,
-    config_json: f.config_json || undefined,
+    config_json: f.config_json?.trim() || null,
   };
 }

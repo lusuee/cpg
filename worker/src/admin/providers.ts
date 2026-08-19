@@ -37,12 +37,12 @@ providersApp.put("/:id", async (c) => {
     return c.json({ error: "type must be anthropic or openai" }, 400);
   }
   const row = await updateProvider(c.env, id, {
-    name: typeof body.name === "string" ? body.name : undefined,
+    name: typeof body.name === "string" ? body.name.trim() : undefined,
     type: body.type,
-    endpoint: "endpoint" in body ? (body.endpoint ?? null) : undefined,
-    secret_name: "secret_name" in body ? (body.secret_name ?? null) : undefined,
+    endpoint: "endpoint" in body ? (body.endpoint ? String(body.endpoint).trim() : null) : undefined,
+    secret_name: "secret_name" in body ? (body.secret_name ? String(body.secret_name).trim() : null) : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    config_json: "config_json" in body ? (body.config_json ?? null) : undefined,
+    config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: publicProvider(row, c.env) });

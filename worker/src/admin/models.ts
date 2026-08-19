@@ -86,11 +86,11 @@ modelsApp.put("/:id", async (c) => {
   }
   const row = await updateModel(c.env, id, {
     provider_id: typeof body.provider_id === "string" ? body.provider_id : undefined,
-    model_name: typeof body.model_name === "string" ? body.model_name : undefined,
-    display_name: "display_name" in body ? (body.display_name ?? null) : undefined,
-    alias: "alias" in body ? (body.alias ?? null) : undefined,
+    model_name: typeof body.model_name === "string" ? body.model_name.trim() : undefined,
+    display_name: "display_name" in body ? (body.display_name ? String(body.display_name).trim() : null) : undefined,
+    alias: "alias" in body ? (body.alias ? String(body.alias).trim() : null) : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    config_json: "config_json" in body ? (body.config_json ?? null) : undefined,
+    config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: row });

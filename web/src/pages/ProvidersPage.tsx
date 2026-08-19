@@ -254,11 +254,11 @@ export default function ProvidersPage() {
 
 function serialize(f: FormState) {
   return {
-    name: f.name,
+    name: f.name.trim(),
     type: f.type,
-    endpoint: f.endpoint || undefined,
-    secret_name: f.secret_name || undefined,
+    endpoint: f.endpoint?.trim() || null,
+    secret_name: f.secret_name?.trim() || null,
     enabled: f.enabled,
-    config_json: f.config_json || undefined,
+    config_json: f.config_json?.trim() || null,
   };
 }
