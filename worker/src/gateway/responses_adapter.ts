@@ -335,7 +335,7 @@ export function convertChatToResponsesJson(chatJson: any, responseId: string): a
 export function createChatToResponsesTransform(
   responseId: string,
   modelName: string,
-  onFinish?: (fullText: string) => void
+  onFinish?: (fullText: string, metadata?: { reasoning?: string; outputItems?: any[] }) => void
 ): TransformStream<Uint8Array, Uint8Array> {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -833,7 +833,7 @@ export function createChatToResponsesTransform(
       });
 
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      if (onFinish) onFinish(fullContent);
+      if (onFinish) onFinish(fullContent, { reasoning: fullReasoning, outputItems: finalOutputList });
     },
   });
 }

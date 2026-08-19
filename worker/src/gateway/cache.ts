@@ -1,16 +1,92 @@
-import type { Env, ModelWithProvider, TokenUsage } from "../types";
+import type { Env, TokenUsage } from "../types";
 
 export interface CachePayload {
   kind: "messages" | "chat/completions" | "responses";
   model: string;
   jsonBody: any;
   usage: TokenUsage;
+  reasoning?: string;
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
   finishReason?: string;
   createdAt: number;
 }
 
-// In-memory fallback cache for environments/tests without KV binding
-const memoryCache = new Map<string, { payload: CachePayload; expiresAt: number }>();
+interface L1CacheEntry {
+  payload: CachePayload;
+  expiresAt: number;
+  lastAccessed: number;
+}
+
+export class L1MemoryCache {
+  private cache = new Map<string, L1CacheEntry>();
+  private readonly maxEntries: number;
+
+  constructor(maxEntries = 500) {
+    this.maxEntries = maxEntries;
+  }
+
+  get(key: string): CachePayload | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    entry.lastAccessed = Date.now();
+    return entry.payload;
+  }
+
+  set(key: string, payload: CachePayload, ttlSeconds: number): void {
+    if (this.cache.size >= this.maxEntries) {
+      let oldestKey: string | null = null;
+      let oldestTime = Infinity;
+      const now = Date.now();
+
+      for (const [k, v] of this.cache.entries()) {
+        if (now > v.expiresAt) {
+          oldestKey = k;
+          break;
+        }
+        if (v.lastAccessed < oldestTime) {
+          oldestTime = v.lastAccessed;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+
+    this.cache.set(key, {
+      payload,
+      expiresAt: Date.now() + Math.max(60, ttlSeconds) * 1000,
+      lastAccessed: Date.now(),
+    });
+  }
+
+  delete(key: string): boolean {
+    return this.cache.delete(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  purgeByModel(modelName: string): number {
+    let count = 0;
+    for (const [k, v] of this.cache.entries()) {
+      if (v.payload.model === modelName || k.includes(`:${modelName}:`)) {
+        this.cache.delete(k);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+}
+
+export const l1MemoryCache = new L1MemoryCache(500);
 
 function sortObjectKeys(obj: any): any {
   if (obj === null || typeof obj !== "object") return obj;
@@ -23,6 +99,23 @@ function sortObjectKeys(obj: any): any {
   return res;
 }
 
+function normalizeMessages(messages: any): any {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map((m) => {
+    if (!m || typeof m !== "object") return m;
+    let content = m.content;
+    if (typeof content === "string") {
+      content = content.trim();
+    }
+    return {
+      role: m.role || "user",
+      content,
+      tool_calls: m.tool_calls,
+      tool_call_id: m.tool_call_id,
+    };
+  });
+}
+
 export async function computeCacheKey(
   kind: "messages" | "chat/completions" | "responses",
   modelName: string,
@@ -31,9 +124,9 @@ export async function computeCacheKey(
   const normalized: Record<string, any> = {
     kind,
     model: modelName,
-    messages: body.messages,
-    system: body.system,
-    prompt: body.prompt,
+    messages: normalizeMessages(body.messages),
+    system: typeof body.system === "string" ? body.system.trim() : body.system,
+    prompt: typeof body.prompt === "string" ? body.prompt.trim() : body.prompt,
     contents: body.contents,
     temperature: typeof body.temperature === "number" ? body.temperature : 1.0,
     top_p: typeof body.top_p === "number" ? body.top_p : 1.0,
@@ -55,7 +148,7 @@ export async function computeCacheKey(
   return `aigw:cache:${kind}:${modelName}:${hashHex}`;
 }
 
-export function shouldBypassCache(headers: Headers, body: any): boolean {
+export function shouldBypassCache(headers: Headers, _body: any): boolean {
   if (headers.get("x-cache-bypass") === "true") return true;
   const cc = headers.get("cache-control") || "";
   if (cc.includes("no-cache") || cc.includes("no-store")) return true;
@@ -63,20 +156,25 @@ export function shouldBypassCache(headers: Headers, body: any): boolean {
 }
 
 export async function getCachedEntry(env: Env, key: string): Promise<CachePayload | null> {
+  // 1. Check L1 Memory Cache (Sub-millisecond)
+  const l1 = l1MemoryCache.get(key);
+  if (l1) return l1;
+
+  // 2. Check L2 Cloudflare KV (Persistent)
   if (env.CACHE_KV) {
     try {
       const val = await env.CACHE_KV.get(key, "json");
-      if (val) return val as CachePayload;
+      if (val) {
+        const payload = val as CachePayload;
+        // Populate L1 cache for subsequent repeated calls
+        l1MemoryCache.set(key, payload, 3600);
+        return payload;
+      }
     } catch {
-      // KV read failure fallback to memory
+      // KV read failure fallback
     }
   }
 
-  const mem = memoryCache.get(key);
-  if (mem) {
-    if (Date.now() < mem.expiresAt) return mem.payload;
-    memoryCache.delete(key);
-  }
   return null;
 }
 
@@ -87,22 +185,64 @@ export async function setCachedEntry(
   ttlSeconds: number
 ): Promise<void> {
   const validTtl = Math.max(60, ttlSeconds || 3600);
+
+  // 1. Populate L1 Memory Cache
+  l1MemoryCache.set(key, payload, validTtl);
+
+  // 2. Populate L2 Cloudflare KV
   if (env.CACHE_KV) {
     try {
       await env.CACHE_KV.put(key, JSON.stringify(payload), { expirationTtl: validTtl });
     } catch {
-      // Ignore KV write failure
+      // Ignore KV write errors
+    }
+  }
+}
+
+export async function purgeCache(
+  env: Env,
+  options?: { model?: string }
+): Promise<{ ok: boolean; cleared: number }> {
+  let cleared = 0;
+
+  if (options?.model) {
+    cleared += l1MemoryCache.purgeByModel(options.model);
+    if (env.CACHE_KV) {
+      try {
+        const prefix = `aigw:cache:`;
+        const list = await env.CACHE_KV.list({ prefix, limit: 1000 });
+        for (const k of list.keys) {
+          if (k.name.includes(`:${options.model}:`)) {
+            await env.CACHE_KV.delete(k.name);
+            cleared++;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } else {
+    cleared += l1MemoryCache.size();
+    l1MemoryCache.clear();
+    if (env.CACHE_KV) {
+      try {
+        const prefix = `aigw:cache:`;
+        const list = await env.CACHE_KV.list({ prefix, limit: 1000 });
+        for (const k of list.keys) {
+          await env.CACHE_KV.delete(k.name);
+          cleared++;
+        }
+      } catch {
+        // ignore
+      }
     }
   }
 
-  memoryCache.set(key, {
-    payload,
-    expiresAt: Date.now() + validTtl * 1000,
-  });
+  return { ok: true, cleared };
 }
 
 export function clearMemoryCacheForTest(): void {
-  memoryCache.clear();
+  l1MemoryCache.clear();
 }
 
 export function createCachedResponse(
@@ -130,37 +270,41 @@ export function createCachedResponse(
   if (kind === "chat/completions") {
     const choice = payload.jsonBody?.choices?.[0];
     const content = choice?.message?.content || "";
+    const reasoning = payload.reasoning || choice?.message?.reasoning_content || "";
     const finishReason = choice?.finish_reason || "stop";
 
-    const chunk1 = {
+    const chunks: string[] = [];
+
+    if (reasoning) {
+      chunks.push(`data: ${JSON.stringify({
+        id: `chatcmpl-${requestId}`,
+        object: "chat.completion.chunk",
+        created: nowUnix,
+        model: modelName,
+        choices: [{ index: 0, delta: { role: "assistant", reasoning_content: reasoning }, finish_reason: null }],
+      })}\n\n`);
+    }
+
+    if (content) {
+      chunks.push(`data: ${JSON.stringify({
+        id: `chatcmpl-${requestId}`,
+        object: "chat.completion.chunk",
+        created: nowUnix,
+        model: modelName,
+        choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }],
+      })}\n\n`);
+    }
+
+    chunks.push(`data: ${JSON.stringify({
       id: `chatcmpl-${requestId}`,
       object: "chat.completion.chunk",
       created: nowUnix,
       model: modelName,
-      choices: [
-        {
-          index: 0,
-          delta: { role: "assistant", content },
-          finish_reason: null,
-        },
-      ],
-    };
+      choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+    })}\n\n`);
 
-    const chunk2 = {
-      id: `chatcmpl-${requestId}`,
-      object: "chat.completion.chunk",
-      created: nowUnix,
-      model: modelName,
-      choices: [
-        {
-          index: 0,
-          delta: {},
-          finish_reason: finishReason,
-        },
-      ],
-    };
-
-    sseBody = `data: ${JSON.stringify(chunk1)}\n\ndata: ${JSON.stringify(chunk2)}\n\ndata: [DONE]\n\n`;
+    chunks.push(`data: [DONE]\n\n`);
+    sseBody = chunks.join("");
   } else if (kind === "messages") {
     const contentText = payload.jsonBody?.content?.[0]?.text || "";
     const msgId = payload.jsonBody?.id || `msg_${requestId}`;
@@ -176,21 +320,71 @@ export function createCachedResponse(
     ];
     sseBody = events.join("");
   } else if (kind === "responses") {
+    const respId = payload.jsonBody?.id || `resp_${requestId}`;
+    const events: string[] = [];
+    let outputIndex = 0;
+
+    events.push(`event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { id: respId, object: "response", status: "in_progress", model: modelName } })}\n\n`);
+
+    // 1. Replay reasoning if present
+    const reasoningItem = Array.isArray(payload.jsonBody?.output)
+      ? payload.jsonBody.output.find((it: any) => it.type === "reasoning")
+      : null;
+    const reasoningText = payload.reasoning || "";
+
+    if (reasoningItem || reasoningText) {
+      const rIndex = outputIndex++;
+      events.push(`event: response.output_item.added\ndata: ${JSON.stringify({ response_id: respId, output_index: rIndex, item: { id: `reasoning_${requestId}`, type: "reasoning", status: "in_progress", summary: [] } })}\n\n`);
+      if (reasoningText) {
+        events.push(`event: response.reasoning_text.delta\ndata: ${JSON.stringify({ response_id: respId, item_id: `reasoning_${requestId}`, output_index: rIndex, content_index: 0, delta: reasoningText })}\n\n`);
+        events.push(`event: response.reasoning.delta\ndata: ${JSON.stringify({ response_id: respId, item_id: `reasoning_${requestId}`, output_index: rIndex, delta: reasoningText })}\n\n`);
+      }
+      events.push(`event: response.output_item.done\ndata: ${JSON.stringify({ response_id: respId, output_index: rIndex, item: { id: `reasoning_${requestId}`, type: "reasoning", status: "completed", summary: [] } })}\n\n`);
+    }
+
+    // 2. Replay message content
     const messageItem = Array.isArray(payload.jsonBody?.output)
-      ? payload.jsonBody.output.find((it: any) => it.type === "message") || payload.jsonBody.output[0]
+      ? payload.jsonBody.output.find((it: any) => it.type === "message")
       : null;
     const text = messageItem?.content?.[0]?.text || "";
-    const respId = payload.jsonBody?.id || `resp_${requestId}`;
-    const events = [
-      `event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { id: respId, object: "response", status: "in_progress", model: modelName } })}\n\n`,
-      `event: response.output_item.added\ndata: ${JSON.stringify({ type: "response.output_item.added", output_index: 0, item: { id: `item_${requestId}`, type: "message", role: "assistant", content: [] } })}\n\n`,
-      `event: response.content_part.added\ndata: ${JSON.stringify({ type: "response.content_part.added", output_index: 0, content_index: 0, part: { type: "output_text", text: "" } })}\n\n`,
-      `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, delta: text })}\n\n`,
-      `event: response.output_text.done\ndata: ${JSON.stringify({ type: "response.output_text.done", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, text })}\n\n`,
-      `event: response.content_part.done\ndata: ${JSON.stringify({ type: "response.content_part.done", response_id: respId, item_id: `item_${requestId}`, output_index: 0, content_index: 0, part: { type: "output_text", text } })}\n\n`,
-      `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item: { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] } })}\n\n`,
-      `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { id: respId, object: "response", status: "completed", model: modelName, output: [messageItem || { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] }], usage: payload.usage } })}\n\n`,
-    ];
+
+    if (text) {
+      const mIndex = outputIndex++;
+      events.push(`event: response.output_item.added\ndata: ${JSON.stringify({ response_id: respId, output_index: mIndex, item: { id: `item_${requestId}`, type: "message", role: "assistant", content: [] } })}\n\n`);
+      events.push(`event: response.content_part.added\ndata: ${JSON.stringify({ response_id: respId, item_id: `item_${requestId}`, output_index: mIndex, content_index: 0, part: { type: "output_text", text: "" } })}\n\n`);
+      events.push(`event: response.output_text.delta\ndata: ${JSON.stringify({ response_id: respId, item_id: `item_${requestId}`, output_index: mIndex, content_index: 0, delta: text })}\n\n`);
+      events.push(`event: response.output_text.done\ndata: ${JSON.stringify({ response_id: respId, item_id: `item_${requestId}`, output_index: mIndex, content_index: 0, text })}\n\n`);
+      events.push(`event: response.content_part.done\ndata: ${JSON.stringify({ response_id: respId, item_id: `item_${requestId}`, output_index: mIndex, content_index: 0, part: { type: "output_text", text } })}\n\n`);
+      events.push(`event: response.output_item.done\ndata: ${JSON.stringify({ response_id: respId, output_index: mIndex, item: { id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] } })}\n\n`);
+    }
+
+    // 3. Replay function calls if present
+    const functionCallItems = Array.isArray(payload.jsonBody?.output)
+      ? payload.jsonBody.output.filter((it: any) => it.type === "function_call")
+      : [];
+
+    for (const fc of functionCallItems) {
+      const fIndex = outputIndex++;
+      const fItemId = fc.id || `call_${fc.call_id || requestId}`;
+      events.push(`event: response.output_item.added\ndata: ${JSON.stringify({ response_id: respId, output_index: fIndex, item: { id: fItemId, type: "function_call", status: "in_progress", call_id: fc.call_id, name: fc.name, arguments: "" } })}\n\n`);
+      events.push(`event: response.function_call_arguments.delta\ndata: ${JSON.stringify({ response_id: respId, item_id: fItemId, output_index: fIndex, call_id: fc.call_id, delta: fc.arguments || "{}" })}\n\n`);
+      events.push(`event: response.function_call_arguments.done\ndata: ${JSON.stringify({ response_id: respId, item_id: fItemId, output_index: fIndex, call_id: fc.call_id, arguments: fc.arguments || "{}" })}\n\n`);
+      events.push(`event: response.output_item.done\ndata: ${JSON.stringify({ response_id: respId, output_index: fIndex, item: { id: fItemId, type: "function_call", status: "completed", call_id: fc.call_id, name: fc.name, arguments: fc.arguments || "{}" } })}\n\n`);
+    }
+
+    events.push(`event: response.completed\ndata: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: respId,
+        object: "response",
+        status: "completed",
+        model: modelName,
+        output: payload.jsonBody?.output || [{ id: `item_${requestId}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text }] }],
+        usage: payload.usage,
+      },
+    })}\n\n`);
+
+    events.push(`data: [DONE]\n\n`);
     sseBody = events.join("");
   }
 

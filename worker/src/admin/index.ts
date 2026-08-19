@@ -7,6 +7,7 @@ import { modelsApp } from "./models";
 import { devicesApp } from "./devices";
 import { usageApp } from "./usage";
 import { settingsApp } from "./settings";
+import { cacheAdminApp } from "./cache";
 
 export const adminApp = new Hono<{ Bindings: Env }>();
 
@@ -23,3 +24,4 @@ adminApp.route("/models", modelsApp);
 adminApp.route("/devices", devicesApp);
 adminApp.route("/usage", usageApp);
 adminApp.route("/settings", settingsApp);
+adminApp.route("/cache", cacheAdminApp);

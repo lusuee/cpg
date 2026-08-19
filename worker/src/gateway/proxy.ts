@@ -275,9 +275,11 @@ async function executeProxyAttempt(
         let resolveDone: () => void = () => {};
         const donePromise = new Promise<void>((resolve) => { resolveDone = resolve; });
         let fullOutput = "";
+        let fullMetadata: { reasoning?: string; outputItems?: any[] } | undefined;
 
-        const transform = createChatToResponsesTransform(requestId, row.model_name, (text) => {
+        const transform = createChatToResponsesTransform(requestId, row.model_name, (text, meta) => {
           fullOutput = text;
+          fullMetadata = meta;
           resolveDone();
         });
 
@@ -304,13 +306,13 @@ async function executeProxyAttempt(
                 object: "response",
                 status: "completed",
                 model: row.model_name,
-                output: [
+                output: fullMetadata?.outputItems || [
                   {
                     id: `item_${requestId}`,
                     type: "message",
                     role: "assistant",
                     status: "completed",
-                    content: [{ type: "text", text: fullOutput }],
+                    content: [{ type: "output_text", text: fullOutput }],
                   },
                 ],
                 usage: usageObj,
@@ -323,6 +325,7 @@ async function executeProxyAttempt(
                   model: row.model_name,
                   jsonBody: respJson,
                   usage: usageObj,
+                  reasoning: fullMetadata?.reasoning,
                   createdAt: startedAt,
                 },
                 row.cache_ttl
@@ -345,6 +348,7 @@ async function executeProxyAttempt(
           c,
           record(pctx, usage, upstreamRes.status).then(async () => {
             if (row.cache_enabled && cacheKey) {
+              const reasoning = chatJson.choices?.[0]?.message?.reasoning_content || undefined;
               await setCachedEntry(
                 c.env,
                 cacheKey,
@@ -353,6 +357,7 @@ async function executeProxyAttempt(
                   model: row.model_name,
                   jsonBody: responsesJson,
                   usage,
+                  reasoning,
                   createdAt: startedAt,
                 },
                 row.cache_ttl

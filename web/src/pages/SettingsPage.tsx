@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { api } from "../api/client";
 import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
-import { IconTerminal, IconShield, IconZap } from "../components/icons";
+import { IconTerminal, IconShield, IconZap, IconTrash } from "../components/icons";
 import { useQuery } from "../hooks/useQuery";
 
 interface SettingsData {
@@ -27,6 +27,20 @@ export default function SettingsPage() {
 
   const { data, loading, error } = useQuery("settings-data", fetchSettings);
   const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "gemini" | "curl">("openai");
+  const [purging, setPurging] = useState(false);
+
+  const handlePurgeCache = async () => {
+    if (!confirm("确定要清空所有网关缓存吗？此操作将重置内存与 KV 缓存。")) return;
+    setPurging(true);
+    try {
+      const res = await api.post<{ ok: boolean; cleared: number }>("/api/cache/purge", {});
+      alert(`网关缓存已清空，共清除 ${res.cleared ?? 0} 个缓存条目`);
+    } catch (err: any) {
+      alert(`清空缓存失败: ${err.message || "未知错误"}`);
+    } finally {
+      setPurging(false);
+    }
+  };
 
   if (loading && !data) return <Spinner text="正在加载系统设置…" />;
   if (error && !data) return <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-4 rounded-xl">{error.message}</div>;
@@ -170,6 +184,31 @@ console.log(res.choices[0].message.content);`;
           )}
         </Card>
       </div>
+
+      {/* Cache Acceleration & Maintenance */}
+      <Card title="多级响应缓存优化 (Multi-Tier Caching)">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                L1 内存 LRU 缓存 + L2 Cloudflare KV 持久化
+              </span>
+              <Badge tone="green" dot>已启用</Badge>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              高频重复请求优先命中内存（&lt;1ms 延迟），支持跨流式/非流式语义归一化复用，完整回放思考链与工具调用。
+            </p>
+          </div>
+          <button
+            onClick={handlePurgeCache}
+            disabled={purging}
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm disabled:opacity-50"
+          >
+            <IconTrash className="w-3.5 h-3.5 text-rose-500" />
+            <span>{purging ? "正在清理…" : "一键清空网关缓存"}</span>
+          </button>
+        </div>
+      </Card>
 
       {/* Integration Code Examples */}
       <Card title="客户端接入指南 (SDK Code Snippets)">
