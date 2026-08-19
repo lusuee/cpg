@@ -175,22 +175,59 @@ export function convertResponsesRequest(body: any): any {
   };
 
   if (Array.isArray(body.tools) && body.tools.length > 0) {
-    cleanBody.tools = body.tools.map((t: any) => {
-      if (t.type === "function" && t.name && !t.function) {
-        return {
+    const normalizedTools: any[] = [];
+    for (const t of body.tools) {
+      if (!t || typeof t !== "object") continue;
+
+      if (t.type === "function" && t.function && typeof t.function === "object") {
+        normalizedTools.push({
           type: "function",
           function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-            strict: t.strict,
+            name: t.function.name,
+            ...(t.function.description ? { description: t.function.description } : {}),
+            ...(t.function.parameters ? { parameters: t.function.parameters } : {}),
+            ...(t.function.strict !== undefined ? { strict: t.function.strict } : {}),
           },
-        };
+        });
+        continue;
       }
-      return t;
-    });
+
+      const name = t.name || t.function?.name || t.custom?.name;
+      if (name && typeof name === "string") {
+        const description = t.description || t.function?.description || t.custom?.description;
+        const parameters = t.parameters || t.function?.parameters || t.custom?.parameters || { type: "object", properties: {} };
+        normalizedTools.push({
+          type: "function",
+          function: {
+            name,
+            ...(description ? { description } : {}),
+            parameters,
+            ...(t.strict !== undefined ? { strict: t.strict } : {}),
+          },
+        });
+      }
+    }
+
+    if (normalizedTools.length > 0) {
+      cleanBody.tools = normalizedTools;
+    }
   }
-  if (body.tool_choice) cleanBody.tool_choice = body.tool_choice;
+
+  if (body.tool_choice) {
+    if (typeof body.tool_choice === "string") {
+      cleanBody.tool_choice = body.tool_choice;
+    } else if (typeof body.tool_choice === "object") {
+      const name = body.tool_choice.name || body.tool_choice.function?.name || body.tool_choice.custom?.name;
+      if (name) {
+        cleanBody.tool_choice = {
+          type: "function",
+          function: { name },
+        };
+      } else if (body.tool_choice.type === "function") {
+        cleanBody.tool_choice = body.tool_choice;
+      }
+    }
+  }
   if (typeof body.temperature === "number") cleanBody.temperature = body.temperature;
   if (typeof body.top_p === "number") cleanBody.top_p = body.top_p;
   if (typeof body.presence_penalty === "number") cleanBody.presence_penalty = body.presence_penalty;

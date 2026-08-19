@@ -138,4 +138,50 @@ describe("DSML & Tool Calling Adapter", () => {
     expect(eventsText).toContain('"name":"exec_command"');
     expect(eventsText).toContain("curl -s --max-time 15");
   });
+
+  it("normalizes 'custom' tool types into standard OpenAI 'function' tools", () => {
+    const reqBodyWithCustomTools = {
+      model: "deepseek-v3",
+      tools: [
+        {
+          type: "custom",
+          name: "web_search",
+          description: "Search the web",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+          },
+        },
+        {
+          type: "custom",
+          custom: {
+            name: "apply_patch",
+            description: "Apply file patch",
+          },
+        },
+      ],
+      tool_choice: {
+        type: "custom",
+        name: "web_search",
+      },
+      input: "明年生肖是什么",
+    };
+
+    const clean = convertResponsesRequest(reqBodyWithCustomTools);
+
+    expect(clean.tools).toBeDefined();
+    expect(clean.tools.length).toBe(2);
+
+    // Both must be type: "function" and contain function sub-object
+    expect(clean.tools[0].type).toBe("function");
+    expect(clean.tools[0].function.name).toBe("web_search");
+    expect(clean.tools[0].function.description).toBe("Search the web");
+
+    expect(clean.tools[1].type).toBe("function");
+    expect(clean.tools[1].function.name).toBe("apply_patch");
+
+    // tool_choice must also be normalized
+    expect(clean.tool_choice.type).toBe("function");
+    expect(clean.tool_choice.function.name).toBe("web_search");
+  });
 });
