@@ -92,17 +92,42 @@ function sortObjectKeys(obj: any): any {
   return res;
 }
 
+export function stripVolatileMetadata(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  return text
+    .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, "")
+    .replace(/The current local time is:\s*[^\n\r]+/gi, "")
+    .replace(/Current (?:date|time|timestamp):\s*[^\n\r]+/gi, "")
+    .replace(/Timestamp:\s*\d{10,13}/gi, "")
+    .trim();
+}
+
+function normalizeContent(content: any): any {
+  if (content === null || content === undefined) return content;
+  if (typeof content === "string") return stripVolatileMetadata(content);
+  if (Array.isArray(content)) {
+    return content.map((item) => {
+      if (typeof item === "string") return stripVolatileMetadata(item);
+      if (item && typeof item === "object") {
+        const res: Record<string, any> = { ...item };
+        if (typeof res.text === "string") res.text = stripVolatileMetadata(res.text);
+        if (typeof res.input_text === "string") res.input_text = stripVolatileMetadata(res.input_text);
+        if (typeof res.output_text === "string") res.output_text = stripVolatileMetadata(res.output_text);
+        return res;
+      }
+      return item;
+    });
+  }
+  return content;
+}
+
 function normalizeMessages(messages: any): any {
   if (!Array.isArray(messages)) return messages;
   return messages.map((m) => {
     if (!m || typeof m !== "object") return m;
-    let content = m.content;
-    if (typeof content === "string") {
-      content = content.trim();
-    }
     return {
       role: m.role || "user",
-      content,
+      content: normalizeContent(m.content),
       tool_calls: m.tool_calls,
       tool_call_id: m.tool_call_id,
     };
@@ -111,16 +136,16 @@ function normalizeMessages(messages: any): any {
 
 function normalizeInput(input: any): any {
   if (!input) return undefined;
-  if (typeof input === "string") return input.trim();
+  if (typeof input === "string") return stripVolatileMetadata(input);
   if (Array.isArray(input)) {
     return input.map((item) => {
-      if (typeof item === "string") return item.trim();
+      if (typeof item === "string") return stripVolatileMetadata(item);
       if (item && typeof item === "object") {
         return {
           type: item.type,
           role: item.role,
-          content: item.content,
-          text: item.text,
+          content: normalizeContent(item.content),
+          text: typeof item.text === "string" ? stripVolatileMetadata(item.text) : item.text,
           name: item.name,
           arguments: item.arguments,
           output: item.output,
@@ -141,10 +166,10 @@ export async function computeCacheKey(
     kind,
     model: modelName,
     messages: normalizeMessages(body.messages),
-    system: typeof body.system === "string" ? body.system.trim() : body.system,
-    instructions: typeof body.instructions === "string" ? body.instructions.trim() : body.instructions,
+    system: typeof body.system === "string" ? stripVolatileMetadata(body.system) : body.system,
+    instructions: typeof body.instructions === "string" ? stripVolatileMetadata(body.instructions) : body.instructions,
     input: normalizeInput(body.input),
-    prompt: typeof body.prompt === "string" ? body.prompt.trim() : body.prompt,
+    prompt: typeof body.prompt === "string" ? stripVolatileMetadata(body.prompt) : body.prompt,
     contents: body.contents,
     temperature: typeof body.temperature === "number" ? body.temperature : 1.0,
     top_p: typeof body.top_p === "number" ? body.top_p : 1.0,

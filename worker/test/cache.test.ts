@@ -62,6 +62,33 @@ describe("Multi-Tier Response Cache", () => {
       expect(key1).not.toBe(key3);
       expect(key2).not.toBe(key3);
     });
+
+    it("generates identical cache key even if client injects dynamic timestamps in metadata", async () => {
+      const body1 = {
+        model: "deepseek-v3",
+        input: [
+          {
+            role: "user",
+            content: "<USER_REQUEST>\n洛阳钼业 怎么样\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-08-20T00:15:12+08:00.\n</ADDITIONAL_METADATA>",
+          },
+        ],
+      };
+
+      const body2 = {
+        model: "deepseek-v3",
+        input: [
+          {
+            role: "user",
+            content: "<USER_REQUEST>\n洛阳钼业 怎么样\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-08-20T00:15:45+08:00.\n</ADDITIONAL_METADATA>",
+          },
+        ],
+      };
+
+      const key1 = await computeCacheKey("responses", "deepseek-v3", body1);
+      const key2 = await computeCacheKey("responses", "deepseek-v3", body2);
+
+      expect(key1).toBe(key2);
+    });
   });
 
   describe("shouldBypassCache", () => {
