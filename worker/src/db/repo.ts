@@ -185,8 +185,9 @@ export async function findModelAndProvider(env: Env, modelKey: string): Promise<
   return (await env.DB.prepare(
     "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
-      "WHERE m.enabled = 1 AND p.enabled = 1 AND (m.model_name = ? OR m.alias = ?) LIMIT 1"
-  ).bind(modelKey, modelKey).first()) as ModelWithProvider | null;
+      "WHERE m.enabled = 1 AND p.enabled = 1 AND (m.model_name = ? OR m.alias = ?) " +
+      "ORDER BY (CASE WHEN m.model_name = ? THEN 0 ELSE 1 END), m.id ASC LIMIT 1"
+  ).bind(modelKey, modelKey, modelKey).first()) as ModelWithProvider | null;
 }
 
 export async function listPublicModels(env: Env) {
