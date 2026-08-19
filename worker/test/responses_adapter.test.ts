@@ -30,6 +30,36 @@ describe("responses_adapter", () => {
     expect(converted.instructions).toBeUndefined();
   });
 
+  it("correctly identifies assistant messages in multi-turn conversation", () => {
+    const req = {
+      model: "deepseek-chat",
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "周末天气怎么样" }],
+        },
+        {
+          type: "output_item",
+          content: [{ type: "output_text", text: "周末有小雨" }],
+        },
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "如何配置模型" }],
+        },
+      ],
+      stream: true,
+    };
+
+    const converted = convertResponsesRequest(req);
+    expect(converted.messages).toEqual([
+      { role: "user", content: "周末天气怎么样" },
+      { role: "assistant", content: "周末有小雨" },
+      { role: "user", content: "如何配置模型" },
+    ]);
+  });
+
   it("converts chat completion JSON to responses JSON", () => {
     const chatJson = {
       id: "chatcmpl-123",

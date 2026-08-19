@@ -21,16 +21,36 @@ export function convertResponsesRequest(body: any): any {
       if (typeof item === "string") {
         messages.push({ role: "user", content: item });
       } else if (item && typeof item === "object") {
-        let role = item.role || (item.type === "message" ? (item.role || "user") : "user");
+        let role = "user";
+        if (typeof item.role === "string" && item.role) {
+          role = item.role === "developer" ? "system" : item.role;
+        } else if (
+          item.type === "output_item" ||
+          item.type === "assistant" ||
+          item.type === "response.output_item" ||
+          (typeof item.type === "string" && item.type.includes("output"))
+        ) {
+          role = "assistant";
+        } else if (item.type === "message" && item.role) {
+          role = item.role;
+        }
+
         let content = item.content ?? item.text ?? "";
         if (Array.isArray(content)) {
+          // If any content part is output_text, this is an assistant message
+          if (!item.role && content.some((c: any) => c && typeof c === "object" && c.type === "output_text")) {
+            role = "assistant";
+          }
+
           const parts: string[] = [];
           for (const part of content) {
             if (typeof part === "string") {
               parts.push(part);
             } else if (part && typeof part === "object") {
               if (typeof part.text === "string") parts.push(part.text);
+              else if (typeof part.output_text === "string") parts.push(part.output_text);
               else if (typeof part.input_text === "string") parts.push(part.input_text);
+              else if (part.type === "output_text" && typeof part.text === "string") parts.push(part.text);
               else if (part.type === "input_text" && typeof part.text === "string") parts.push(part.text);
               else if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
               else parts.push(JSON.stringify(part));
@@ -83,13 +103,13 @@ export function convertChatToResponsesJson(chatJson: any, responseId: string): a
     model: chatJson.model || "openai",
     output: [
       {
-        id: `msg_${responseId}`,
+        id: `item_${responseId}`,
         type: "message",
         status: "completed",
         role: "assistant",
         content: [
           {
-            type: "text",
+            type: "output_text",
             text: content,
           },
         ],
@@ -150,7 +170,7 @@ export function createChatToResponsesTransform(
           item_id: `item_${responseId}`,
           output_index: 0,
           content_index: 0,
-          part: { type: "text", text: "" },
+          part: { type: "output_text", text: "" },
         });
       }
 
@@ -212,7 +232,7 @@ export function createChatToResponsesTransform(
           item_id: `item_${responseId}`,
           output_index: 0,
           content_index: 0,
-          part: { type: "text", text: "" },
+          part: { type: "output_text", text: "" },
         });
       }
 
@@ -229,7 +249,7 @@ export function createChatToResponsesTransform(
         item_id: `item_${responseId}`,
         output_index: 0,
         content_index: 0,
-        part: { type: "text", text: fullContent },
+        part: { type: "output_text", text: fullContent },
       });
 
       sendEvent(controller, "response.output_item.done", {
@@ -240,7 +260,7 @@ export function createChatToResponsesTransform(
           type: "message",
           status: "completed",
           role: "assistant",
-          content: [{ type: "text", text: fullContent }],
+          content: [{ type: "output_text", text: fullContent }],
         },
       });
 
@@ -249,7 +269,7 @@ export function createChatToResponsesTransform(
         type: "message",
         status: "completed",
         role: "assistant",
-        content: [{ type: "text", text: fullContent }],
+        content: [{ type: "output_text", text: fullContent }],
       };
 
       sendEvent(controller, "response.completed", {
