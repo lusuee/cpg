@@ -95,7 +95,14 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
     expect(m1).toBeDefined();
     expect(m1?.display_name).toBe("GPT-4o Flagship");
     expect(m1?.context_window).toBe(128000);
-    expect(m1?.default_reasoning_level).toBeNull();
+    expect(m1?.max_context_window).toBe(128000);
+    expect(m1?.effective_context_window_percent).toBe(95);
+    expect(m1?.shell_type).toBe("shell_command");
+    expect(m1?.apply_patch_tool_type).toBe("freeform");
+    expect(m1?.web_search_tool_type).toBe("text_and_image");
+    expect(m1?.base_instructions).toContain("You are Codex");
+    expect(m1?.model_messages?.instructions_template).toContain("You are Codex");
+    expect(m1?.model_messages?.instructions_variables?.personality_friendly).toBeDefined();
     expect(m1?.input_modalities).toEqual(["text", "image"]);
     expect((m1 as any)?.custom_tag).toBe("fast");
 
@@ -103,7 +110,7 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
     const m2 = catalog.models.find((x) => x.slug === "deepseek-r1");
     expect(m2).toBeDefined();
     expect(m2?.display_name).toBe("DeepSeek R1");
-    expect(m2?.default_reasoning_level).toBe("high");
     expect(m2?.supported_reasoning_levels?.length).toBeGreaterThan(0);
+    expect(m2?.priority).toBe(1001);
   });
 });

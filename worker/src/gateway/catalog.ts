@@ -1,14 +1,44 @@
 import type { ModelRow } from "../types";
+import { catalogTemplate } from "./catalog_template";
 
 export interface ModelCatalogEntry {
-  slug: string;
-  display_name: string;
-  description?: string;
+  additional_speed_tiers: any[];
+  apply_patch_tool_type: string;
+  availability_nux: any;
+  base_instructions: string;
   context_window: number;
-  default_reasoning_level?: "none" | "low" | "medium" | "high" | null;
-  supported_reasoning_levels?: Array<{ effort: string; description: string }>;
-  input_modalities?: string[];
-  supports_parallel_tool_calls?: boolean;
+  default_reasoning_level: string | null;
+  default_reasoning_summary: string;
+  default_verbosity: string;
+  description: string;
+  display_name: string;
+  effective_context_window_percent: number;
+  experimental_supported_tools: any[];
+  input_modalities: string[];
+  max_context_window: number;
+  model_messages: {
+    instructions_template: string;
+    instructions_variables: {
+      personality_default: string;
+      personality_friendly: string;
+      personality_pragmatic: string;
+    };
+  };
+  priority: number;
+  service_tiers: any[];
+  shell_type: string;
+  slug: string;
+  support_verbosity: boolean;
+  supported_in_api: boolean;
+  supported_reasoning_levels: Array<{ description: string; effort: string }>;
+  supports_image_detail_original: boolean;
+  supports_parallel_tool_calls: boolean;
+  supports_reasoning_summaries: boolean;
+  supports_search_tool: boolean;
+  truncation_policy: { limit: number; mode: string };
+  upgrade: any;
+  visibility: string;
+  web_search_tool_type: string;
   [key: string]: any;
 }
 
@@ -66,7 +96,8 @@ export function inferInputModalities(modelName: string): string[] {
     name.includes("gemini") ||
     name.includes("claude-3") ||
     name.includes("pixtral") ||
-    name.includes("omni")
+    name.includes("omni") ||
+    name.includes("kimi")
   ) {
     return ["text", "image"];
   }
@@ -75,6 +106,7 @@ export function inferInputModalities(modelName: string): string[] {
 
 export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
   const catalogEntries: ModelCatalogEntry[] = [];
+  let priorityCounter = 1000;
 
   for (const m of models) {
     if (!m.enabled) continue;
@@ -100,24 +132,58 @@ export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
     const description =
       typeof customConfig.description === "string"
         ? customConfig.description
-        : `${displayName} (${m.provider_id || "gateway"})`;
+        : displayName;
+
+    const reasoningLevels = [
+      {
+        description: "Fast responses with lighter reasoning",
+        effort: "low",
+      },
+      {
+        description: "Balances speed and reasoning depth for everyday tasks",
+        effort: "medium",
+      },
+      {
+        description: "Greater reasoning depth for complex problems",
+        effort: "high",
+      },
+      {
+        description: "Extra high reasoning depth for complex problems",
+        effort: "xhigh",
+      },
+    ];
 
     const entry: ModelCatalogEntry = {
-      slug,
-      display_name: displayName,
-      description,
+      additional_speed_tiers: [],
+      apply_patch_tool_type: "freeform",
+      availability_nux: null,
+      base_instructions: customConfig.base_instructions || catalogTemplate.base_instructions,
       context_window: contextWindow,
-      default_reasoning_level: reasoning ? "high" : null,
-      supported_reasoning_levels: reasoning
-        ? [
-            { effort: "none", description: "Standard (no reasoning)" },
-            { effort: "low", description: "Fast reasoning" },
-            { effort: "medium", description: "Balanced reasoning" },
-            { effort: "high", description: "Deep reasoning" },
-          ]
-        : [],
-      input_modalities: inferInputModalities(m.model_name),
+      default_reasoning_level: customConfig.default_reasoning_level ?? (reasoning ? "medium" : "medium"),
+      default_reasoning_summary: "none",
+      default_verbosity: "low",
+      description,
+      display_name: displayName,
+      effective_context_window_percent: customConfig.effective_context_window_percent ?? 95,
+      experimental_supported_tools: [],
+      input_modalities: customConfig.input_modalities || inferInputModalities(m.model_name),
+      max_context_window: customConfig.max_context_window ?? contextWindow,
+      model_messages: customConfig.model_messages || catalogTemplate.model_messages,
+      priority: customConfig.priority ?? priorityCounter++,
+      service_tiers: [],
+      shell_type: "shell_command",
+      slug,
+      support_verbosity: true,
+      supported_in_api: true,
+      supported_reasoning_levels: customConfig.supported_reasoning_levels || reasoningLevels,
+      supports_image_detail_original: true,
       supports_parallel_tool_calls: true,
+      supports_reasoning_summaries: true,
+      supports_search_tool: true,
+      truncation_policy: customConfig.truncation_policy || { limit: 10000, mode: "tokens" },
+      upgrade: null,
+      visibility: "list",
+      web_search_tool_type: "text_and_image",
       ...customConfig,
     };
 

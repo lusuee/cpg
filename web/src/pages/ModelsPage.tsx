@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea, CopyButton } from "../components/ui";
@@ -342,7 +342,24 @@ export default function ModelsPage() {
     }),
   };
 
-  const modelCatalogJson = JSON.stringify(modelCatalogObj, null, 2);
+  const [serverCatalogJson, setServerCatalogJson] = useState<string>("");
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      const data = await api.get<{ models: any[] }>("/api/models/catalog");
+      setServerCatalogJson(JSON.stringify(data, null, 2));
+    } catch {
+      // fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showExport) {
+      loadCatalog();
+    }
+  }, [showExport, loadCatalog]);
+
+  const modelCatalogJson = serverCatalogJson || JSON.stringify(modelCatalogObj, null, 2);
 
   const defaultModelSlug = activeModels[0]?.alias || activeModels[0]?.model_name || "gpt-4o";
 
