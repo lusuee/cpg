@@ -465,6 +465,73 @@ wire_specification = "openai"
         </div>
       </div>
 
+      {/* Model Matching & Routing Logic Banner */}
+      <div className="rounded-2xl border border-blue-100 dark:border-blue-900/60 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/60 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-purple-950/30 p-4 sm:p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm">
+              🧭
+            </span>
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+              网关模型匹配与请求路由逻辑
+            </h3>
+          </div>
+          <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono hidden sm:inline">
+            别名优先 • 协议直通 • 故障秒级降级
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-blue-100/80 dark:border-blue-900/40 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 font-semibold">
+              <span>1. 客户端请求 (Model)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono">
+                Step 1
+              </span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+              识别客户端请求参数 <code>model</code>。支持传入官方标准模型名或您自定义的别名。
+            </p>
+          </div>
+
+          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400 font-semibold">
+              <span>2. 别名优先匹配 (Alias)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono">
+                Step 2
+              </span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+              <strong>第一优先级</strong>：优先匹配模型的 <strong>快捷别名 (Alias)</strong>。如将 <code>gpt4</code> 别名映射并转发至 <code>gpt-4o-2024-11-20</code>。
+            </p>
+          </div>
+
+          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-purple-100/80 dark:border-purple-900/40 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-purple-600 dark:text-purple-400 font-semibold">
+              <span>3. 原始模型名直通</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-mono">
+                Step 3
+              </span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+              <strong>第二优先级</strong>：若无别名则匹配 <strong>上游模型名 (Model ID)</strong>，且要求当前模型与绑定 Provider 均处于<strong>启用</strong>状态。
+            </p>
+          </div>
+
+          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 font-semibold">
+              <span>4. 故障自动降级 (Fallback)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-mono">
+                Step 4
+              </span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+              主上游出现 <code>5xx / 429 / 超时</code> 时，网关<strong>自动重试配置的备用模型</strong>，保障客户端业务无感切换。
+            </p>
+          </div>
+        </div>
+      </div>
+
       {!providers.length ? (
         <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
           <span>⚠️ 尚未创建任何 Provider，请先前往「Providers」页面创建上游服务商。</span>
