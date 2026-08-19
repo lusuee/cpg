@@ -80,6 +80,29 @@ async function record(
   });
 }
 
+export function extractTextFromSse(kind: "messages" | "chat/completions", fullStreamText: string): string {
+  let extractedText = "";
+  const lines = fullStreamText.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.startsWith("data: ") || line.includes("[DONE]")) continue;
+    try {
+      const json = JSON.parse(line.slice(6));
+      if (kind === "chat/completions") {
+        const delta = json.choices?.[0]?.delta?.content;
+        if (delta) extractedText += delta;
+      } else if (kind === "messages") {
+        if (json.type === "content_block_delta" && json.delta?.text) {
+          extractedText += json.delta.text;
+        }
+      }
+    } catch {}
+  }
+  return extractedText;
+}
+
+const MAX_TAIL_BYTES = 32 * 1024; // 32 KB tail for usage parsing
+const MAX_CACHE_STREAM_BYTES = 512 * 1024; // 512 KB max for response caching
+
 function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   if (!upstreamRes.body) {
     const res = new Response(null, { status: upstreamRes.status, headers: cleanResponseHeaders(upstreamRes.headers) });
@@ -87,8 +110,9 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
     return res;
   }
 
-  const MAX_TAIL = 16 * 1024;
-  let fullStreamText = "";
+  const shouldCache = upstreamRes.ok && Boolean(ctx.row.cache_enabled) && Boolean(ctx.cacheKey);
+  let streamText = "";
+  let cacheDisabledDueToSize = false;
   let resolveDone: () => void = () => {};
   const donePromise = new Promise<void>((resolve) => { resolveDone = resolve; });
   const decoder = new TextDecoder();
@@ -96,10 +120,26 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   const transform = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       const decoded = decoder.decode(chunk, { stream: true });
-      fullStreamText += decoded;
+      streamText += decoded;
+
+      if (shouldCache && !cacheDisabledDueToSize) {
+        if (streamText.length > MAX_CACHE_STREAM_BYTES) {
+          // Stream exceeds cache limit; disable caching and keep only tail buffer
+          cacheDisabledDueToSize = true;
+          streamText = streamText.slice(-MAX_TAIL_BYTES);
+        }
+      } else {
+        // Not caching; keep only tail buffer to prevent memory exhaustion
+        if (streamText.length > MAX_TAIL_BYTES * 2) {
+          streamText = streamText.slice(-MAX_TAIL_BYTES);
+        }
+      }
+
       controller.enqueue(chunk);
     },
     flush() {
+      const finalChunk = decoder.decode();
+      if (finalChunk) streamText += finalChunk;
       resolveDone();
     },
   });
@@ -111,25 +151,14 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   waitUntil(
     ctx.c,
     donePromise.then(async () => {
-      const usage = parseUsage(ctx.row.provider_type, fullStreamText);
+      const usage = parseUsage(ctx.row.provider_type, streamText);
       await record(ctx, usage, upstreamRes.status);
 
-      // Asynchronously cache on 200 OK if cache is enabled
-      if (upstreamRes.ok && ctx.row.cache_enabled && ctx.cacheKey) {
+      // Asynchronously cache on 200 OK if cache is enabled and within size limit
+      if (shouldCache && !cacheDisabledDueToSize && ctx.cacheKey) {
         try {
+          const extractedText = extractTextFromSse(ctx.kind as "messages" | "chat/completions", streamText);
           if (ctx.kind === "chat/completions") {
-            // Extract assistant text from SSE chunks
-            let extractedText = "";
-            const lines = fullStreamText.split(/\r?\n/);
-            for (const line of lines) {
-              if (line.startsWith("data: ") && !line.includes("[DONE]")) {
-                try {
-                  const chunkJson = JSON.parse(line.slice(6));
-                  const delta = chunkJson.choices?.[0]?.delta?.content;
-                  if (delta) extractedText += delta;
-                } catch {}
-              }
-            }
             const jsonBody = {
               id: `chatcmpl-${ctx.requestId}`,
               object: "chat.completion",
@@ -157,18 +186,6 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
               ctx.row.cache_ttl
             );
           } else if (ctx.kind === "messages") {
-            let extractedText = "";
-            const lines = fullStreamText.split(/\r?\n/);
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const eventJson = JSON.parse(line.slice(6));
-                  if (eventJson.type === "content_block_delta" && eventJson.delta?.text) {
-                    extractedText += eventJson.delta.text;
-                  }
-                } catch {}
-              }
-            }
             const jsonBody = {
               id: `msg_${ctx.requestId}`,
               type: "message",

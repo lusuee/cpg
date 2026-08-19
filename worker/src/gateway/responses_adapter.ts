@@ -1,5 +1,70 @@
+export interface ParsedToolCall {
+  callId: string;
+  name: string;
+  arguments: Record<string, any>;
+}
+
+export function extractDsmlToolCalls(text: string): { cleanContent: string; toolCalls: ParsedToolCall[] } | null {
+  const dsmlRegex = /<\s*\|\s*DSML\s*\|\s*tool_calls\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i;
+  const match = text.match(dsmlRegex);
+  if (!match) return null;
+
+  const fullBlock = match[0];
+  const innerBlock = match[1];
+  const toolCalls: ParsedToolCall[] = [];
+
+  const invokeRegex = /<\s*\|\s*DSML\s*\|\s*invoke\s+name=[\"'](.*?)[\"']\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*invoke\s*>/gi;
+  let invokeMatch: RegExpExecArray | null;
+
+  while ((invokeMatch = invokeRegex.exec(innerBlock)) !== null) {
+    const name = invokeMatch[1].trim();
+    const paramsBlock = invokeMatch[2];
+    const args: Record<string, any> = {};
+
+    const paramRegex = /<\s*\|\s*DSML\s*\|\s*parameter\s+name=[\"'](.*?)[\"'](?:\s+string=[\"'](.*?)[\"'])?\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*parameter\s*>/gi;
+    let paramMatch: RegExpExecArray | null;
+
+    while ((paramMatch = paramRegex.exec(paramsBlock)) !== null) {
+      const paramName = paramMatch[1].trim();
+      const isString = (paramMatch[2] || "").toLowerCase() === "true";
+      const isNotString = (paramMatch[2] || "").toLowerCase() === "false";
+      let paramValue: any = paramMatch[3].trim();
+
+      if (isNotString) {
+        try {
+          paramValue = JSON.parse(paramValue);
+        } catch {
+          // keep as string
+        }
+      } else if (!isString) {
+        if (/^(\[|\{|\d+|true|false|null)/.test(paramValue)) {
+          try {
+            paramValue = JSON.parse(paramValue);
+          } catch {
+            // keep as string
+          }
+        }
+      }
+
+      args[paramName] = paramValue;
+    }
+
+    const callId = `call_${Math.random().toString(36).slice(2, 11)}`;
+    toolCalls.push({
+      callId,
+      name,
+      arguments: args,
+    });
+  }
+
+  if (toolCalls.length === 0) return null;
+
+  const cleanContent = text.replace(fullBlock, "").trim();
+  return { cleanContent, toolCalls };
+}
+
 export function convertResponsesRequest(body: any): any {
-  const messages: Array<{ role: string; content: any }> = [];
+  const messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string }> = [];
 
   if (body.instructions && typeof body.instructions === "string") {
     messages.push({ role: "system", content: body.instructions });
@@ -11,6 +76,8 @@ export function convertResponsesRequest(body: any): any {
         messages.push({
           role: m.role || "user",
           content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          tool_calls: m.tool_calls,
+          tool_call_id: m.tool_call_id,
         });
       }
     }
@@ -21,6 +88,37 @@ export function convertResponsesRequest(body: any): any {
       if (typeof item === "string") {
         messages.push({ role: "user", content: item });
       } else if (item && typeof item === "object") {
+        if (item.type === "function_call") {
+          const callId = item.call_id || item.id || `call_${Math.random().toString(36).slice(2, 9)}`;
+          const args = typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {});
+          messages.push({
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: callId,
+                type: "function",
+                function: {
+                  name: item.name,
+                  arguments: args,
+                },
+              },
+            ],
+          });
+          continue;
+        }
+
+        if (item.type === "function_call_output") {
+          const callId = item.call_id || item.id;
+          const output = typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? "");
+          messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            content: output,
+          });
+          continue;
+        }
+
         let role = "user";
         if (typeof item.role === "string" && item.role) {
           role = item.role === "developer" ? "system" : item.role;
@@ -37,7 +135,6 @@ export function convertResponsesRequest(body: any): any {
 
         let content = item.content ?? item.text ?? "";
         if (Array.isArray(content)) {
-          // If any content part is output_text, this is an assistant message
           if (!item.role && content.some((c: any) => c && typeof c === "object" && c.type === "output_text")) {
             role = "assistant";
           }
@@ -77,6 +174,23 @@ export function convertResponsesRequest(body: any): any {
     stream: body.stream === true,
   };
 
+  if (Array.isArray(body.tools) && body.tools.length > 0) {
+    cleanBody.tools = body.tools.map((t: any) => {
+      if (t.type === "function" && t.name && !t.function) {
+        return {
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+            strict: t.strict,
+          },
+        };
+      }
+      return t;
+    });
+  }
+  if (body.tool_choice) cleanBody.tool_choice = body.tool_choice;
   if (typeof body.temperature === "number") cleanBody.temperature = body.temperature;
   if (typeof body.top_p === "number") cleanBody.top_p = body.top_p;
   if (typeof body.presence_penalty === "number") cleanBody.presence_penalty = body.presence_penalty;
@@ -118,18 +232,57 @@ export function convertChatToResponsesJson(chatJson: any, responseId: string): a
     });
   }
 
-  output.push({
-    id: `item_${responseId}`,
-    type: "message",
-    status: "completed",
-    role: "assistant",
-    content: [
-      {
-        type: "output_text",
-        text: content,
-      },
-    ],
-  });
+  // 1. Standard OpenAI tool_calls
+  const standardToolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+
+  // 2. DSML tool calls inside content
+  let dsmlToolCalls: ParsedToolCall[] = [];
+  if (typeof content === "string") {
+    const dsml = extractDsmlToolCalls(content);
+    if (dsml) {
+      content = dsml.cleanContent;
+      dsmlToolCalls = dsml.toolCalls;
+    }
+  }
+
+  if (content) {
+    output.push({
+      id: `item_${responseId}`,
+      type: "message",
+      status: "completed",
+      role: "assistant",
+      content: [
+        {
+          type: "output_text",
+          text: content,
+        },
+      ],
+    });
+  }
+
+  for (const tc of standardToolCalls) {
+    if (tc.type === "function") {
+      output.push({
+        id: `call_${tc.id || responseId}`,
+        type: "function_call",
+        status: "completed",
+        call_id: tc.id || `call_${responseId}`,
+        name: tc.function?.name || "",
+        arguments: tc.function?.arguments || "{}",
+      });
+    }
+  }
+
+  for (const tc of dsmlToolCalls) {
+    output.push({
+      id: `call_${tc.callId}`,
+      type: "function_call",
+      status: "completed",
+      call_id: tc.callId,
+      name: tc.name,
+      arguments: JSON.stringify(tc.arguments),
+    });
+  }
 
   return {
     id: responseId,
@@ -156,8 +309,15 @@ export function createChatToResponsesTransform(
   let reasoningStarted = false;
   let reasoningDone = false;
   let messageStarted = false;
+  let messageDone = false;
 
   let insideThinkTag = false;
+  let insideDsmlTag = false;
+  let dsmlBuffer = "";
+
+  let outputIndexCounter = 0;
+  const emittedOutputItems: any[] = [];
+  const activeToolCalls = new Map<number, { id: string; callId: string; name: string; arguments: string; outputIndex: number }>();
 
   function sendEvent(controller: TransformStreamDefaultController<Uint8Array>, event: string, data: any) {
     const payload = { type: event, ...data };
@@ -182,9 +342,10 @@ export function createChatToResponsesTransform(
   function startReasoning(controller: TransformStreamDefaultController<Uint8Array>) {
     if (!reasoningStarted) {
       reasoningStarted = true;
+      const reasoningIndex = outputIndexCounter++;
       sendEvent(controller, "response.output_item.added", {
         response_id: responseId,
-        output_index: 0,
+        output_index: reasoningIndex,
         item: {
           id: `reasoning_${responseId}`,
           type: "reasoning",
@@ -230,14 +391,16 @@ export function createChatToResponsesTransform(
     }
   }
 
+  let messageOutputIndex = 0;
+
   function startMessage(controller: TransformStreamDefaultController<Uint8Array>) {
     finishReasoning(controller);
     if (!messageStarted) {
       messageStarted = true;
-      const messageIndex = reasoningStarted ? 1 : 0;
+      messageOutputIndex = outputIndexCounter++;
       sendEvent(controller, "response.output_item.added", {
         response_id: responseId,
-        output_index: messageIndex,
+        output_index: messageOutputIndex,
         item: {
           id: `item_${responseId}`,
           type: "message",
@@ -249,7 +412,7 @@ export function createChatToResponsesTransform(
       sendEvent(controller, "response.content_part.added", {
         response_id: responseId,
         item_id: `item_${responseId}`,
-        output_index: messageIndex,
+        output_index: messageOutputIndex,
         content_index: 0,
         part: { type: "output_text", text: "" },
       });
@@ -260,14 +423,114 @@ export function createChatToResponsesTransform(
     ensureCreated(controller);
     startMessage(controller);
     fullContent += delta;
-    const messageIndex = reasoningStarted ? 1 : 0;
     sendEvent(controller, "response.output_text.delta", {
       response_id: responseId,
       item_id: `item_${responseId}`,
-      output_index: messageIndex,
+      output_index: messageOutputIndex,
       content_index: 0,
       delta,
     });
+  }
+
+  function finishMessage(controller: TransformStreamDefaultController<Uint8Array>) {
+    if (messageStarted && !messageDone) {
+      messageDone = true;
+      sendEvent(controller, "response.output_text.done", {
+        response_id: responseId,
+        item_id: `item_${responseId}`,
+        output_index: messageOutputIndex,
+        content_index: 0,
+        text: fullContent,
+      });
+
+      sendEvent(controller, "response.content_part.done", {
+        response_id: responseId,
+        item_id: `item_${responseId}`,
+        output_index: messageOutputIndex,
+        content_index: 0,
+        part: { type: "output_text", text: fullContent },
+      });
+
+      const messageOutputItem = {
+        id: `item_${responseId}`,
+        type: "message",
+        status: "completed",
+        role: "assistant",
+        content: [{ type: "output_text", text: fullContent }],
+      };
+
+      sendEvent(controller, "response.output_item.done", {
+        response_id: responseId,
+        output_index: messageOutputIndex,
+        item: messageOutputItem,
+      });
+
+      emittedOutputItems.push(messageOutputItem);
+    }
+  }
+
+  function emitFunctionCall(
+    controller: TransformStreamDefaultController<Uint8Array>,
+    name: string,
+    argumentsObjOrString: any,
+    explicitCallId?: string
+  ) {
+    ensureCreated(controller);
+    finishReasoning(controller);
+    finishMessage(controller);
+
+    const callId = explicitCallId || `call_${Math.random().toString(36).slice(2, 11)}`;
+    const argsStr = typeof argumentsObjOrString === "string" ? argumentsObjOrString : JSON.stringify(argumentsObjOrString);
+    const itemIndex = outputIndexCounter++;
+    const itemId = `call_${callId}`;
+
+    const funcItem = {
+      id: itemId,
+      type: "function_call",
+      status: "in_progress",
+      call_id: callId,
+      name,
+      arguments: "",
+    };
+
+    sendEvent(controller, "response.output_item.added", {
+      response_id: responseId,
+      output_index: itemIndex,
+      item: funcItem,
+    });
+
+    sendEvent(controller, "response.function_call_arguments.delta", {
+      response_id: responseId,
+      item_id: itemId,
+      output_index: itemIndex,
+      call_id: callId,
+      delta: argsStr,
+    });
+
+    sendEvent(controller, "response.function_call_arguments.done", {
+      response_id: responseId,
+      item_id: itemId,
+      output_index: itemIndex,
+      call_id: callId,
+      arguments: argsStr,
+    });
+
+    const completedFuncItem = {
+      id: itemId,
+      type: "function_call",
+      status: "completed",
+      call_id: callId,
+      name,
+      arguments: argsStr,
+    };
+
+    sendEvent(controller, "response.output_item.done", {
+      response_id: responseId,
+      output_index: itemIndex,
+      item: completedFuncItem,
+    });
+
+    emittedOutputItems.push(completedFuncItem);
   }
 
   function handleContentChunk(controller: TransformStreamDefaultController<Uint8Array>, text: string) {
@@ -288,15 +551,70 @@ export function createChatToResponsesTransform(
           emitReasoningDelta(controller, remaining);
           remaining = "";
         }
+      } else if (insideDsmlTag) {
+        dsmlBuffer += remaining;
+        const closeDsmlMatch = dsmlBuffer.match(/<\s*\/\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
+        if (closeDsmlMatch && closeDsmlMatch.index !== undefined) {
+          const fullDsml = dsmlBuffer.slice(0, closeDsmlMatch.index + closeDsmlMatch[0].length);
+          const afterDsml = dsmlBuffer.slice(fullDsml.length);
+          insideDsmlTag = false;
+          dsmlBuffer = "";
+
+          const parsed = extractDsmlToolCalls(fullDsml);
+          if (parsed) {
+            for (const tc of parsed.toolCalls) {
+              emitFunctionCall(controller, tc.name, tc.arguments, tc.callId);
+            }
+          }
+
+          remaining = afterDsml;
+        } else {
+          remaining = "";
+        }
       } else {
-        const openTagMatch = remaining.match(/<(think|thought)>/i);
-        if (openTagMatch && openTagMatch.index !== undefined) {
-          const preContent = remaining.slice(0, openTagMatch.index);
+        const openThinkMatch = remaining.match(/<(think|thought)>/i);
+        const openDsmlMatch = remaining.match(/<\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
+
+        let firstMatch: { type: "think" | "dsml"; index: number; length: number } | null = null;
+        if (openThinkMatch && openThinkMatch.index !== undefined) {
+          firstMatch = { type: "think", index: openThinkMatch.index, length: openThinkMatch[0].length };
+        }
+        if (openDsmlMatch && openDsmlMatch.index !== undefined) {
+          if (!firstMatch || openDsmlMatch.index < firstMatch.index) {
+            firstMatch = { type: "dsml", index: openDsmlMatch.index, length: openDsmlMatch[0].length };
+          }
+        }
+
+        if (firstMatch) {
+          const preContent = remaining.slice(0, firstMatch.index);
           if (preContent) {
             emitContentDelta(controller, preContent);
           }
-          insideThinkTag = true;
-          remaining = remaining.slice(openTagMatch.index + openTagMatch[0].length);
+          if (firstMatch.type === "think") {
+            insideThinkTag = true;
+            remaining = remaining.slice(firstMatch.index + firstMatch.length);
+          } else {
+            insideDsmlTag = true;
+            dsmlBuffer = remaining.slice(firstMatch.index);
+            remaining = "";
+            // Check if already closed within this chunk
+            const closeDsmlMatch = dsmlBuffer.match(/<\s*\/\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
+            if (closeDsmlMatch && closeDsmlMatch.index !== undefined) {
+              const fullDsml = dsmlBuffer.slice(0, closeDsmlMatch.index + closeDsmlMatch[0].length);
+              const afterDsml = dsmlBuffer.slice(fullDsml.length);
+              insideDsmlTag = false;
+              dsmlBuffer = "";
+
+              const parsed = extractDsmlToolCalls(fullDsml);
+              if (parsed) {
+                for (const tc of parsed.toolCalls) {
+                  emitFunctionCall(controller, tc.name, tc.arguments, tc.callId);
+                }
+              }
+
+              remaining = afterDsml;
+            }
+          }
         } else {
           emitContentDelta(controller, remaining);
           remaining = "";
@@ -318,13 +636,64 @@ export function createChatToResponsesTransform(
       const choice = parsed.choices?.[0];
       const delta = choice?.delta;
 
-      // 1. Handle explicit reasoning deltas (DeepSeek-R1, Gemini Thinking, etc.)
+      // 1. Handle explicit reasoning deltas
       const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning ?? "";
       if (reasoningDelta && typeof reasoningDelta === "string") {
         emitReasoningDelta(controller, reasoningDelta);
       }
 
-      // 2. Handle standard content deltas
+      // 2. Handle standard OpenAI streaming tool_calls
+      if (Array.isArray(delta?.tool_calls)) {
+        finishReasoning(controller);
+        finishMessage(controller);
+
+        for (const tc of delta.tool_calls) {
+          const index = typeof tc.index === "number" ? tc.index : 0;
+          let entry = activeToolCalls.get(index);
+
+          if (!entry && tc.function?.name) {
+            const callId = tc.id || `call_${Math.random().toString(36).slice(2, 11)}`;
+            const itemIndex = outputIndexCounter++;
+            const itemId = `call_${callId}`;
+
+            entry = {
+              id: itemId,
+              callId,
+              name: tc.function.name,
+              arguments: "",
+              outputIndex: itemIndex,
+            };
+            activeToolCalls.set(index, entry);
+
+            sendEvent(controller, "response.output_item.added", {
+              response_id: responseId,
+              output_index: itemIndex,
+              item: {
+                id: itemId,
+                type: "function_call",
+                status: "in_progress",
+                call_id: callId,
+                name: entry.name,
+                arguments: "",
+              },
+            });
+          }
+
+          const argChunk = tc.function?.arguments;
+          if (entry && argChunk && typeof argChunk === "string") {
+            entry.arguments += argChunk;
+            sendEvent(controller, "response.function_call_arguments.delta", {
+              response_id: responseId,
+              item_id: entry.id,
+              output_index: entry.outputIndex,
+              call_id: entry.callId,
+              delta: argChunk,
+            });
+          }
+        }
+      }
+
+      // 3. Handle standard content deltas
       const contentDelta = delta?.content ?? choice?.text ?? "";
       if (contentDelta && typeof contentDelta === "string") {
         handleContentChunk(controller, contentDelta);
@@ -349,55 +718,67 @@ export function createChatToResponsesTransform(
         processLine(controller, buffer);
       }
 
+      // Flush lingering DSML buffer if stream ended
+      if (insideDsmlTag && dsmlBuffer) {
+        const parsed = extractDsmlToolCalls(dsmlBuffer);
+        if (parsed) {
+          for (const tc of parsed.toolCalls) {
+            emitFunctionCall(controller, tc.name, tc.arguments, tc.callId);
+          }
+        }
+        dsmlBuffer = "";
+        insideDsmlTag = false;
+      }
+
       ensureCreated(controller);
       finishReasoning(controller);
 
-      if (!messageStarted) {
-        startMessage(controller);
+      // Finish any standard streaming tool calls
+      for (const [, tc] of activeToolCalls) {
+        sendEvent(controller, "response.function_call_arguments.done", {
+          response_id: responseId,
+          item_id: tc.id,
+          output_index: tc.outputIndex,
+          call_id: tc.callId,
+          arguments: tc.arguments,
+        });
+
+        const completedItem = {
+          id: tc.id,
+          type: "function_call",
+          status: "completed",
+          call_id: tc.callId,
+          name: tc.name,
+          arguments: tc.arguments,
+        };
+
+        sendEvent(controller, "response.output_item.done", {
+          response_id: responseId,
+          output_index: tc.outputIndex,
+          item: completedItem,
+        });
+
+        emittedOutputItems.push(completedItem);
       }
 
-      const messageIndex = reasoningStarted ? 1 : 0;
+      if (messageStarted) {
+        finishMessage(controller);
+      } else if (emittedOutputItems.length === 0) {
+        // If neither message nor tool calls were sent, emit empty message
+        startMessage(controller);
+        finishMessage(controller);
+      }
 
-      sendEvent(controller, "response.output_text.done", {
-        response_id: responseId,
-        item_id: `item_${responseId}`,
-        output_index: messageIndex,
-        content_index: 0,
-        text: fullContent,
-      });
-
-      sendEvent(controller, "response.content_part.done", {
-        response_id: responseId,
-        item_id: `item_${responseId}`,
-        output_index: messageIndex,
-        content_index: 0,
-        part: { type: "output_text", text: fullContent },
-      });
-
-      const messageOutputItem = {
-        id: `item_${responseId}`,
-        type: "message",
-        status: "completed",
-        role: "assistant",
-        content: [{ type: "output_text", text: fullContent }],
-      };
-
-      sendEvent(controller, "response.output_item.done", {
-        response_id: responseId,
-        output_index: messageIndex,
-        item: messageOutputItem,
-      });
-
-      const outputItems: any[] = [];
+      const finalOutputList: any[] = [];
       if (reasoningStarted) {
-        outputItems.push({
+        finalOutputList.push({
           id: `reasoning_${responseId}`,
           type: "reasoning",
           status: "completed",
           summary: [],
         });
       }
-      outputItems.push(messageOutputItem);
+      finalOutputList.push(...emittedOutputItems);
 
       sendEvent(controller, "response.completed", {
         response: {
@@ -405,7 +786,7 @@ export function createChatToResponsesTransform(
           object: "response",
           status: "completed",
           model: modelName,
-          output: outputItems,
+          output: finalOutputList,
           usage: {
             input_tokens: 0,
             output_tokens: Math.max(1, Math.ceil(fullContent.length / 4)),

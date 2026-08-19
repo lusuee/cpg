@@ -15,7 +15,9 @@
     "db:migrate:remote": "wrangler d1 migrations apply personal-ai-gateway --remote"
   },
   "dependencies": {
-    "hono": "^4.6.14"
+    "@hono/zod-validator": "^0.4.2",
+    "hono": "^4.6.14",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241022.0",

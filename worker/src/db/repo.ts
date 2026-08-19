@@ -311,12 +311,8 @@ export async function touchDevice(env: Env, id: string) {
 }
 
 export async function checkDeviceRateLimit(env: Env, deviceId: string, rpm: number): Promise<boolean> {
-  if (!rpm || rpm <= 0) return true;
-  const oneMinuteAgo = Date.now() - 60000;
-  const res = await env.DB.prepare(
-    "SELECT COUNT(*) as count FROM usage WHERE device_id = ? AND created_at >= ?"
-  ).bind(deviceId, oneMinuteAgo).first<{ count: number }>();
-  return (res?.count ?? 0) < rpm;
+  const { checkAndRecordRateLimit } = await import("../gateway/ratelimit");
+  return checkAndRecordRateLimit(env, deviceId, rpm);
 }
 
 // ---------- Usage ----------

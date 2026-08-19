@@ -8,6 +8,8 @@ import {
   updateDevice,
 } from "../db/repo";
 
+import { CreateDeviceSchema, UpdateDeviceSchema, zValidator } from "./schemas";
+
 export const devicesApp = new Hono<{ Bindings: Env }>();
 
 devicesApp.get("/", async (c) => {
@@ -15,22 +17,21 @@ devicesApp.get("/", async (c) => {
   return c.json({ items });
 });
 
-devicesApp.post("/", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.name || typeof body.name !== "string") return c.json({ error: "name is required" }, 400);
-  const rateLimitRpm = typeof body.rate_limit_rpm === "number" ? Math.max(0, body.rate_limit_rpm) : 0;
+devicesApp.post("/", zValidator("json", CreateDeviceSchema), async (c) => {
+  const data = c.req.valid("json");
+  const rateLimitRpm = typeof data.rate_limit_rpm === "number" ? Math.max(0, data.rate_limit_rpm) : 0;
   const token = generateDeviceToken();
   const tokenHash = await hashToken(token);
-  const device = await createDevice(c.env, body.name, tokenHash, rateLimitRpm);
+  const device = await createDevice(c.env, data.name.trim(), tokenHash, rateLimitRpm);
   return c.json({ item: device, token }, 201);
 });
 
-devicesApp.put("/:id", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
+devicesApp.put("/:id", zValidator("json", UpdateDeviceSchema), async (c) => {
+  const data = c.req.valid("json");
   const row = await updateDevice(c.env, c.req.param("id"), {
-    name: typeof body.name === "string" ? body.name : undefined,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    rate_limit_rpm: typeof body.rate_limit_rpm === "number" ? Math.max(0, body.rate_limit_rpm) : undefined,
+    name: data.name !== undefined ? data.name.trim() : undefined,
+    enabled: data.enabled,
+    rate_limit_rpm: typeof data.rate_limit_rpm === "number" ? Math.max(0, data.rate_limit_rpm) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: row });

@@ -132,8 +132,10 @@ usageApp.get("/stats", async (c) => {
   });
 });
 
-usageApp.post("/aggregate", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const res = await aggregateDailyStats(c.env, body.date);
+import { AggregateStatsSchema, zValidator } from "./schemas";
+
+usageApp.post("/aggregate", zValidator("json", AggregateStatsSchema), async (c) => {
+  const data = c.req.valid("json");
+  const res = await aggregateDailyStats(c.env, data.date);
   return c.json({ ok: true, aggregated: res.aggregated });
 });

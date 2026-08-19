@@ -11,6 +11,15 @@ import {
 } from "../db/repo";
 import { buildModelCatalog } from "../gateway/catalog";
 
+import {
+  CreateModelSchema,
+  UpdateModelSchema,
+  BatchCreateModelsSchema,
+  BatchUpdateModelsSchema,
+  BatchDeleteModelsSchema,
+  zValidator,
+} from "./schemas";
+
 export const modelsApp = new Hono<{ Bindings: Env }>();
 
 modelsApp.get("/", async (c) => {
@@ -37,45 +46,40 @@ modelsApp.get("/catalog/export", async (c) => {
   });
 });
 
-modelsApp.post("/", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.model_name || typeof body.model_name !== "string") return c.json({ error: "model_name is required" }, 400);
-  if (!body.provider_id || typeof body.provider_id !== "string") return c.json({ error: "provider_id is required" }, 400);
-  const provider = await getProvider(c.env, body.provider_id);
+modelsApp.post("/", zValidator("json", CreateModelSchema), async (c) => {
+  const data = c.req.valid("json");
+  const provider = await getProvider(c.env, data.provider_id);
   if (!provider) return c.json({ error: "provider_not_found" }, 400);
   const row = await createModel(c.env, {
-    provider_id: body.provider_id,
-    model_name: body.model_name,
-    display_name: typeof body.display_name === "string" ? body.display_name : undefined,
-    alias: typeof body.alias === "string" ? body.alias : undefined,
-    fallback_model_id: typeof body.fallback_model_id === "string" ? body.fallback_model_id : undefined,
-    input_price_per_m: typeof body.input_price_per_m === "number" ? body.input_price_per_m : undefined,
-    output_price_per_m: typeof body.output_price_per_m === "number" ? body.output_price_per_m : undefined,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : true,
-    config_json: typeof body.config_json === "string" ? body.config_json : undefined,
+    provider_id: data.provider_id,
+    model_name: data.model_name.trim(),
+    display_name: data.display_name ? data.display_name.trim() : undefined,
+    alias: data.alias ? data.alias.trim() : undefined,
+    fallback_model_id: data.fallback_model_id ? data.fallback_model_id.trim() : undefined,
+    input_price_per_m: data.input_price_per_m,
+    output_price_per_m: data.output_price_per_m,
+    cache_enabled: data.cache_enabled,
+    cache_ttl: data.cache_ttl,
+    enabled: data.enabled,
+    config_json: data.config_json ? data.config_json.trim() : undefined,
   });
   return c.json({ item: row }, 201);
 });
 
-modelsApp.post("/batch", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const providerId = body.provider_id;
-  const models = body.models;
-  if (!providerId || typeof providerId !== "string") return c.json({ error: "provider_id is required" }, 400);
-  if (!Array.isArray(models) || !models.length) return c.json({ error: "models array is required" }, 400);
-
-  const provider = await getProvider(c.env, providerId);
+modelsApp.post("/batch", zValidator("json", BatchCreateModelsSchema), async (c) => {
+  const data = c.req.valid("json");
+  const provider = await getProvider(c.env, data.provider_id);
   if (!provider) return c.json({ error: "provider_not_found" }, 400);
 
   const created = [];
-  for (const m of models) {
+  for (const m of data.models) {
     const name = typeof m === "string" ? m : m.model_name;
     if (!name || typeof name !== "string") continue;
     const row = await createModel(c.env, {
-      provider_id: providerId,
-      model_name: name,
-      display_name: typeof m === "object" && m.display_name ? m.display_name : undefined,
-      alias: typeof m === "object" && m.alias ? m.alias : undefined,
+      provider_id: data.provider_id,
+      model_name: name.trim(),
+      display_name: typeof m === "object" && m.display_name ? m.display_name.trim() : undefined,
+      alias: typeof m === "object" && m.alias ? m.alias.trim() : undefined,
       enabled: true,
     });
     created.push(row);
@@ -83,40 +87,37 @@ modelsApp.post("/batch", async (c) => {
   return c.json({ created: created.length, items: created }, 201);
 });
 
-modelsApp.post("/batch-update", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const ids = body.ids;
-  if (!Array.isArray(ids) || !ids.length) return c.json({ error: "ids array is required" }, 400);
-  const enabled = typeof body.enabled === "boolean" ? body.enabled : undefined;
-  const count = await batchUpdateModels(c.env, ids, { enabled });
+modelsApp.post("/batch-update", zValidator("json", BatchUpdateModelsSchema), async (c) => {
+  const data = c.req.valid("json");
+  const count = await batchUpdateModels(c.env, data.ids, { enabled: data.enabled });
   return c.json({ updated: count });
 });
 
-modelsApp.post("/batch-delete", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const ids = body.ids;
-  if (!Array.isArray(ids) || !ids.length) return c.json({ error: "ids array is required" }, 400);
-  const count = await batchDeleteModels(c.env, ids);
+modelsApp.post("/batch-delete", zValidator("json", BatchDeleteModelsSchema), async (c) => {
+  const data = c.req.valid("json");
+  const count = await batchDeleteModels(c.env, data.ids);
   return c.json({ deleted: count });
 });
 
-modelsApp.put("/:id", async (c) => {
+modelsApp.put("/:id", zValidator("json", UpdateModelSchema), async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json().catch(() => ({}));
-  if (body.provider_id && typeof body.provider_id === "string") {
-    const provider = await getProvider(c.env, body.provider_id);
+  const data = c.req.valid("json");
+  if (data.provider_id) {
+    const provider = await getProvider(c.env, data.provider_id);
     if (!provider) return c.json({ error: "provider_not_found" }, 400);
   }
   const row = await updateModel(c.env, id, {
-    provider_id: typeof body.provider_id === "string" ? body.provider_id : undefined,
-    model_name: typeof body.model_name === "string" ? body.model_name.trim() : undefined,
-    display_name: "display_name" in body ? (body.display_name ? String(body.display_name).trim() : null) : undefined,
-    alias: "alias" in body ? (body.alias ? String(body.alias).trim() : null) : undefined,
-    fallback_model_id: "fallback_model_id" in body ? (body.fallback_model_id ? String(body.fallback_model_id).trim() : null) : undefined,
-    input_price_per_m: typeof body.input_price_per_m === "number" ? body.input_price_per_m : undefined,
-    output_price_per_m: typeof body.output_price_per_m === "number" ? body.output_price_per_m : undefined,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
+    provider_id: data.provider_id,
+    model_name: data.model_name !== undefined ? data.model_name.trim() : undefined,
+    display_name: data.display_name !== undefined ? (data.display_name ? data.display_name.trim() : null) : undefined,
+    alias: data.alias !== undefined ? (data.alias ? data.alias.trim() : null) : undefined,
+    fallback_model_id: data.fallback_model_id !== undefined ? (data.fallback_model_id ? data.fallback_model_id.trim() : null) : undefined,
+    input_price_per_m: data.input_price_per_m,
+    output_price_per_m: data.output_price_per_m,
+    cache_enabled: data.cache_enabled,
+    cache_ttl: data.cache_ttl,
+    enabled: data.enabled,
+    config_json: data.config_json !== undefined ? (data.config_json ? data.config_json.trim() : null) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: row });

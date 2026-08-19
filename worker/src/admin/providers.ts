@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { Env, ProviderRow } from "../types";
 import { createProvider, deleteProvider, listProviders, updateProvider, getProvider } from "../db/repo";
 
+import { CreateProviderSchema, UpdateProviderSchema, zValidator } from "./schemas";
+
 export const providersApp = new Hono<{ Bindings: Env }>();
 
 export function maskApiKey(key: string | null | undefined): string | null {
@@ -34,38 +36,31 @@ providersApp.get("/", async (c) => {
   return c.json({ items: result });
 });
 
-providersApp.post("/", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.name || typeof body.name !== "string") return c.json({ error: "name is required" }, 400);
-  if (body.type !== "anthropic" && body.type !== "openai" && body.type !== "gemini") {
-    return c.json({ error: "type must be anthropic, openai or gemini" }, 400);
-  }
+providersApp.post("/", zValidator("json", CreateProviderSchema), async (c) => {
+  const data = c.req.valid("json");
   const row = await createProvider(c.env, {
-    name: body.name.trim(),
-    type: body.type,
-    endpoint: typeof body.endpoint === "string" ? body.endpoint.trim() : undefined,
-    api_key: typeof body.api_key === "string" ? body.api_key.trim() : undefined,
-    secret_name: typeof body.secret_name === "string" ? body.secret_name.trim() : undefined,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : true,
-    config_json: typeof body.config_json === "string" ? body.config_json : undefined,
+    name: data.name.trim(),
+    type: data.type,
+    endpoint: data.endpoint ? data.endpoint.trim() : undefined,
+    api_key: data.api_key ? data.api_key.trim() : undefined,
+    secret_name: data.secret_name ? data.secret_name.trim() : undefined,
+    enabled: data.enabled !== undefined ? data.enabled : true,
+    config_json: data.config_json ? data.config_json.trim() : undefined,
   });
   return c.json({ item: publicProvider(row, c.env) }, 201);
 });
 
-providersApp.put("/:id", async (c) => {
+providersApp.put("/:id", zValidator("json", UpdateProviderSchema), async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json().catch(() => ({}));
-  if (body.type && body.type !== "anthropic" && body.type !== "openai" && body.type !== "gemini") {
-    return c.json({ error: "type must be anthropic, openai or gemini" }, 400);
-  }
+  const data = c.req.valid("json");
   const row = await updateProvider(c.env, id, {
-    name: typeof body.name === "string" ? body.name.trim() : undefined,
-    type: body.type,
-    endpoint: "endpoint" in body ? (body.endpoint ? String(body.endpoint).trim() : null) : undefined,
-    api_key: "api_key" in body ? (body.api_key ? String(body.api_key).trim() : null) : undefined,
-    secret_name: "secret_name" in body ? (body.secret_name ? String(body.secret_name).trim() : null) : undefined,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
+    name: data.name !== undefined ? data.name.trim() : undefined,
+    type: data.type,
+    endpoint: data.endpoint !== undefined ? (data.endpoint ? data.endpoint.trim() : null) : undefined,
+    api_key: data.api_key !== undefined ? (data.api_key ? data.api_key.trim() : null) : undefined,
+    secret_name: data.secret_name !== undefined ? (data.secret_name ? data.secret_name.trim() : null) : undefined,
+    enabled: data.enabled,
+    config_json: data.config_json !== undefined ? (data.config_json ? data.config_json.trim() : null) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: publicProvider(row, c.env) });
