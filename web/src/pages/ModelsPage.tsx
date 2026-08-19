@@ -39,6 +39,7 @@ export default function ModelsPage() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [filterProviderId, setFilterProviderId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<FormState>({
     provider_id: "",
@@ -222,12 +223,16 @@ export default function ModelsPage() {
 
   if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
 
-  const filteredItems = items.filter(
-    (m) =>
-      m.model_name.toLowerCase().includes(search.toLowerCase()) ||
-      (m.display_name && m.display_name.toLowerCase().includes(search.toLowerCase())) ||
-      (m.alias && m.alias.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredItems = items.filter((m) => {
+    if (filterProviderId && m.provider_id !== filterProviderId) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      m.model_name.toLowerCase().includes(q) ||
+      (m.display_name && m.display_name.toLowerCase().includes(q)) ||
+      (m.alias && m.alias.toLowerCase().includes(q))
+    );
+  });
 
   const filteredSyncModels = fetchedModels.filter((m) =>
     m.toLowerCase().includes(syncFilter.toLowerCase())
@@ -318,16 +323,32 @@ export default function ModelsPage() {
       ) : null}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative w-full max-w-sm">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <IconSearch />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+              <IconSearch />
+            </div>
+            <Input
+              className="pl-9"
+              placeholder="搜索模型名 / 显示名 / 别名…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-          <Input
-            className="pl-9"
-            placeholder="搜索模型名 / 显示名 / 别名…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+
+          <div className="w-full sm:w-52">
+            <Select
+              value={filterProviderId}
+              onChange={(e) => setFilterProviderId(e.target.value)}
+            >
+              <option value="">全部 Provider ({providers.length})</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.type})
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
 
         {/* Floating / Inline Batch Operations Toolbar */}
