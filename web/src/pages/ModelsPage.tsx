@@ -54,6 +54,10 @@ export default function ModelsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchOperating, setBatchOperating] = useState(false);
 
+  // Export modal state
+  const [showExport, setShowExport] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"codex" | "continue" | "list">("codex");
+
   // Sync / Auto-fetch modal state
   const [showSync, setShowSync] = useState(false);
   const [syncProviderId, setSyncProviderId] = useState("");
@@ -221,8 +225,6 @@ export default function ModelsPage() {
     }
   }
 
-  if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
-
   const filteredItems = items.filter((m) => {
     if (filterProviderId && m.provider_id !== filterProviderId) return false;
     if (!search.trim()) return true;
@@ -258,10 +260,6 @@ export default function ModelsPage() {
     });
   };
 
-  // Export modal state
-  const [showExport, setShowExport] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"codex" | "continue" | "list">("codex");
-
   const baseUrl = window.location.origin;
   const activeModels = items.filter((m) => m.enabled);
 
@@ -290,6 +288,8 @@ export default function ModelsPage() {
   );
 
   const modelListText = activeModels.map((m) => m.alias || m.model_name).join("\n");
+
+  if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
 
   return (
     <div className="space-y-6">
