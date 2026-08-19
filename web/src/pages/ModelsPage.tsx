@@ -11,6 +11,9 @@ interface FormState {
   model_name: string;
   display_name: string;
   alias: string;
+  fallback_model_id: string;
+  input_price_per_m: string;
+  output_price_per_m: string;
   enabled: boolean;
   config_json: string;
 }
@@ -46,6 +49,9 @@ export default function ModelsPage() {
     model_name: "",
     display_name: "",
     alias: "",
+    fallback_model_id: "",
+    input_price_per_m: "",
+    output_price_per_m: "",
     enabled: true,
     config_json: "",
   });
@@ -74,6 +80,9 @@ export default function ModelsPage() {
       model_name: "",
       display_name: "",
       alias: "",
+      fallback_model_id: "",
+      input_price_per_m: "",
+      output_price_per_m: "",
       enabled: true,
       config_json: "",
     });
@@ -88,6 +97,9 @@ export default function ModelsPage() {
       model_name: m.model_name,
       display_name: m.display_name || "",
       alias: m.alias || "",
+      fallback_model_id: m.fallback_model_id || "",
+      input_price_per_m: m.input_price_per_m ? String(m.input_price_per_m) : "",
+      output_price_per_m: m.output_price_per_m ? String(m.output_price_per_m) : "",
       enabled: Boolean(m.enabled),
       config_json: m.config_json || "",
     });
@@ -412,6 +424,8 @@ export default function ModelsPage() {
                 <th className="pb-3 px-2">显示名称</th>
                 <th className="pb-3 px-2">客户端别名</th>
                 <th className="pb-3 px-2">绑定 Provider</th>
+                <th className="pb-3 px-2">1M 定价 (入/出)</th>
+                <th className="pb-3 px-2">故障备用</th>
                 <th className="pb-3 px-2">状态</th>
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
@@ -419,6 +433,7 @@ export default function ModelsPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredItems.map((m) => {
                 const isSelected = selectedIds.has(m.id);
+                const fallbackModel = m.fallback_model_id ? items.find((x) => x.id === m.fallback_model_id) : null;
                 return (
                   <tr
                     key={m.id}
@@ -439,6 +454,24 @@ export default function ModelsPage() {
                     </td>
                     <td className="py-3 px-2 text-slate-600 font-medium">
                       {m.provider_name || <span className="font-mono text-xs text-slate-400">{m.provider_id}</span>}
+                    </td>
+                    <td className="py-3 px-2 font-mono text-xs text-slate-600">
+                      {m.input_price_per_m || m.output_price_per_m ? (
+                        <span>
+                          ${m.input_price_per_m || 0} / ${m.output_price_per_m || 0}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-2">
+                      {fallbackModel ? (
+                        <Badge tone="amber" className="max-w-[120px] truncate" title={`降级至: ${fallbackModel.model_name}`}>
+                          {fallbackModel.alias || fallbackModel.model_name}
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
                     </td>
                     <td className="py-3 px-2">
                       <button
@@ -620,7 +653,7 @@ export default function ModelsPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">上游模型标识 (Model ID)</label>
             <Input
               required
-              placeholder="例如 gpt-4o / claude-3-5-sonnet-20241022 / deepseek-chat"
+              placeholder="例如 gpt-4o / claude-3-5-sonnet-20241022 / gemini-1.5-pro"
               value={form.model_name}
               onChange={(e) => setForm({ ...form, model_name: e.target.value })}
             />
@@ -641,6 +674,54 @@ export default function ModelsPage() {
                 placeholder="例如 claude / gpt4"
                 value={form.alias}
                 onChange={(e) => setForm({ ...form, alias: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              故障降级备用模型 (Fallback Model) <span className="text-slate-400 font-normal">（主上游 5xx/429 时自动重试）</span>
+            </label>
+            <Select
+              value={form.fallback_model_id}
+              onChange={(e) => setForm({ ...form, fallback_model_id: e.target.value })}
+            >
+              <option value="">无降级备用（直接返回错误）</option>
+              {items
+                .filter((m) => m.id !== form.id && m.enabled)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name ? `${m.display_name} (${m.model_name})` : m.model_name} - {m.provider_name}
+                  </option>
+                ))}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                输入定价 ($ / 1M Tokens)
+              </label>
+              <Input
+                type="number"
+                step="0.0001"
+                min="0"
+                placeholder="例如 2.50"
+                value={form.input_price_per_m}
+                onChange={(e) => setForm({ ...form, input_price_per_m: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                输出定价 ($ / 1M Tokens)
+              </label>
+              <Input
+                type="number"
+                step="0.0001"
+                min="0"
+                placeholder="例如 10.00"
+                value={form.output_price_per_m}
+                onChange={(e) => setForm({ ...form, output_price_per_m: e.target.value })}
               />
             </div>
           </div>
@@ -767,7 +848,11 @@ function serialize(f: FormState) {
     model_name: f.model_name.trim(),
     display_name: f.display_name?.trim() || null,
     alias: f.alias?.trim() || null,
+    fallback_model_id: f.fallback_model_id ? f.fallback_model_id.trim() : null,
+    input_price_per_m: f.input_price_per_m ? parseFloat(f.input_price_per_m) || 0 : 0,
+    output_price_per_m: f.output_price_per_m ? parseFloat(f.output_price_per_m) || 0 : 0,
     enabled: f.enabled,
     config_json: f.config_json?.trim() || null,
   };
 }
+

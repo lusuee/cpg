@@ -16,8 +16,8 @@ providersApp.get("/", async (c) => {
 providersApp.post("/", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.name || typeof body.name !== "string") return c.json({ error: "name is required" }, 400);
-  if (body.type !== "anthropic" && body.type !== "openai") {
-    return c.json({ error: "type must be anthropic or openai" }, 400);
+  if (body.type !== "anthropic" && body.type !== "openai" && body.type !== "gemini") {
+    return c.json({ error: "type must be anthropic, openai or gemini" }, 400);
   }
   const row = await createProvider(c.env, {
     name: body.name,
@@ -33,8 +33,8 @@ providersApp.post("/", async (c) => {
 providersApp.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
-  if (body.type && body.type !== "anthropic" && body.type !== "openai") {
-    return c.json({ error: "type must be anthropic or openai" }, 400);
+  if (body.type && body.type !== "anthropic" && body.type !== "openai" && body.type !== "gemini") {
+    return c.json({ error: "type must be anthropic, openai or gemini" }, 400);
   }
   const row = await updateProvider(c.env, id, {
     name: typeof body.name === "string" ? body.name.trim() : undefined,
@@ -68,15 +68,26 @@ providersApp.post("/:id/fetch-models", async (c) => {
     }, 400);
   }
 
-  const endpoint = (p.endpoint || (p.type === "anthropic" ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1")).replace(/\/+$/, "");
-  const modelsUrl = `${endpoint}/models`;
+  const endpoint = (
+    p.endpoint ||
+    (p.type === "anthropic"
+      ? "https://api.anthropic.com/v1"
+      : p.type === "gemini"
+      ? "https://generativelanguage.googleapis.com/v1beta"
+      : "https://api.openai.com/v1")
+  ).replace(/\/+$/, "");
 
+  let modelsUrl = `${endpoint}/models`;
   const headers: Record<string, string> = {
     "User-Agent": "Cloudflare-AI-Gateway/1.0",
   };
+
   if (p.type === "anthropic") {
     headers["x-api-key"] = upstreamKey;
     headers["anthropic-version"] = "2023-06-01";
+  } else if (p.type === "gemini") {
+    headers["x-goog-api-key"] = upstreamKey;
+    modelsUrl = `${endpoint}/models?key=${encodeURIComponent(upstreamKey)}`;
   } else {
     headers["Authorization"] = `Bearer ${upstreamKey}`;
   }
@@ -94,10 +105,13 @@ providersApp.post("/:id/fetch-models", async (c) => {
     const modelIds: string[] = [];
     const rawList = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : Array.isArray(data) ? data : [];
     for (const item of rawList) {
-      const name = typeof item === "string" ? item : item?.id || item?.name;
-      if (name && typeof name === "string") modelIds.push(name);
+      let name = typeof item === "string" ? item : item?.id || item?.name;
+      if (name && typeof name === "string") {
+        if (name.startsWith("models/")) name = name.slice(7);
+        modelIds.push(name);
+      }
     }
-    return c.json({ models: modelIds.sort() });
+    return c.json({ models: Array.from(new Set(modelIds)).sort() });
   } catch (err: any) {
     return c.json({ error: "network_error", message: err.message || "请求上游超时或网络异常" }, 502);
   }

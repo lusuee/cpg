@@ -28,6 +28,9 @@ modelsApp.post("/", async (c) => {
     model_name: body.model_name,
     display_name: typeof body.display_name === "string" ? body.display_name : undefined,
     alias: typeof body.alias === "string" ? body.alias : undefined,
+    fallback_model_id: typeof body.fallback_model_id === "string" ? body.fallback_model_id : undefined,
+    input_price_per_m: typeof body.input_price_per_m === "number" ? body.input_price_per_m : undefined,
+    output_price_per_m: typeof body.output_price_per_m === "number" ? body.output_price_per_m : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : true,
     config_json: typeof body.config_json === "string" ? body.config_json : undefined,
   });
@@ -89,6 +92,9 @@ modelsApp.put("/:id", async (c) => {
     model_name: typeof body.model_name === "string" ? body.model_name.trim() : undefined,
     display_name: "display_name" in body ? (body.display_name ? String(body.display_name).trim() : null) : undefined,
     alias: "alias" in body ? (body.alias ? String(body.alias).trim() : null) : undefined,
+    fallback_model_id: "fallback_model_id" in body ? (body.fallback_model_id ? String(body.fallback_model_id).trim() : null) : undefined,
+    input_price_per_m: typeof body.input_price_per_m === "number" ? body.input_price_per_m : undefined,
+    output_price_per_m: typeof body.output_price_per_m === "number" ? body.output_price_per_m : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
   });

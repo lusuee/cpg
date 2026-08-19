@@ -1,8 +1,8 @@
 import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError, fmtTime } from "../api/client";
 import type { DeviceItem } from "../types";
-import { Badge, Button, Card, Empty, Input, Modal, Spinner, CopyButton } from "../components/ui";
-import { IconPlus, IconDevices, IconShield, IconCopy } from "../components/icons";
+import { Badge, Button, Card, Empty, Input, Modal, Spinner } from "../components/ui";
+import { IconPlus, IconEdit, IconDevices, IconShield, IconCopy } from "../components/icons";
 import { useQuery } from "../hooks/useQuery";
 
 interface CreateResponse {
@@ -20,21 +20,56 @@ export default function DevicesPage() {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
+  const [rateLimitRpm, setRateLimitRpm] = useState<string>("0");
   const [created, setCreated] = useState<CreateResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Edit state
+  const [editingDevice, setEditingDevice] = useState<DeviceItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRpm, setEditRpm] = useState("0");
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      const res = await api.post<CreateResponse>("/api/devices", { name });
+      const rpm = parseInt(rateLimitRpm, 10) || 0;
+      const res = await api.post<CreateResponse>("/api/devices", { name, rate_limit_rpm: rpm });
       setName("");
+      setRateLimitRpm("0");
       setShowCreate(false);
       setCreated(res);
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "创建失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openEdit(d: DeviceItem) {
+    setEditingDevice(d);
+    setEditName(d.name);
+    setEditRpm(String(d.rate_limit_rpm || 0));
+    setError("");
+  }
+
+  async function onSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingDevice) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const rpm = parseInt(editRpm, 10) || 0;
+      await api.put(`/api/devices/${editingDevice.id}`, {
+        name: editName,
+        rate_limit_rpm: rpm,
+      });
+      setEditingDevice(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "修改失败");
     } finally {
       setSubmitting(false);
     }
@@ -67,12 +102,14 @@ export default function DevicesPage() {
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">设备与客户端 Token</h2>
           <p className="text-xs text-slate-500 mt-1">
-            为不同客户端（如 Cursor、VS Code 插件、本地脚本、手机）签发独立的鉴权 Token
+            为不同客户端（如 Cursor、VS Code 插件、本地脚本、手机）签发独立的鉴权 Token 与速率限制
           </p>
         </div>
         <Button
           onClick={() => {
             setError("");
+            setName("");
+            setRateLimitRpm("0");
             setShowCreate(true);
           }}
           className="shadow-sm"
@@ -89,6 +126,7 @@ export default function DevicesPage() {
               <tr className="border-b border-slate-100 text-slate-400 font-medium">
                 <th className="pb-3 px-2">设备名称</th>
                 <th className="pb-3 px-2">当前状态</th>
+                <th className="pb-3 px-2">每分钟限流 (RPM)</th>
                 <th className="pb-3 px-2">最近活跃时间</th>
                 <th className="pb-3 px-2">创建时间</th>
                 <th className="pb-3 px-2 text-right">操作</th>
@@ -116,11 +154,22 @@ export default function DevicesPage() {
                       </Badge>
                     )}
                   </td>
+                  <td className="py-3 px-2 font-mono text-xs">
+                    {d.rate_limit_rpm ? (
+                      <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
+                    ) : (
+                      <span className="text-slate-400">无限制</span>
+                    )}
+                  </td>
                   <td className="py-3 px-2 text-slate-600 text-xs">{fmtTime(d.last_used_at)}</td>
                   <td className="py-3 px-2 text-slate-400 text-xs">{fmtTime(d.created_at)}</td>
                   <td className="py-3 px-2 text-right">
                     {!d.revoked_at ? (
                       <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(d)}>
+                          <IconEdit />
+                          <span>编辑</span>
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => onToggle(d)}>
                           {d.enabled ? "暂停" : "恢复"}
                         </Button>
@@ -167,6 +216,19 @@ export default function DevicesPage() {
             </p>
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              每分钟请求限流 (RPM) <span className="text-slate-400 font-normal">（0 为不限制）</span>
+            </label>
+            <Input
+              type="number"
+              min="0"
+              value={rateLimitRpm}
+              onChange={(e) => setRateLimitRpm(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
           {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -175,6 +237,49 @@ export default function DevicesPage() {
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting ? "正在生成…" : "确认签发"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        open={Boolean(editingDevice)}
+        onClose={() => setEditingDevice(null)}
+        title="编辑设备配置"
+      >
+        <form onSubmit={onSaveEdit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">设备/应用名称</label>
+            <Input
+              required
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="设备名称"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              每分钟请求限流 (RPM) <span className="text-slate-400 font-normal">（0 为不限制）</span>
+            </label>
+            <Input
+              type="number"
+              min="0"
+              value={editRpm}
+              onChange={(e) => setEditRpm(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          {error ? <div className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg">{error}</div> : null}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="secondary" onClick={() => setEditingDevice(null)}>
+              取消
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "正在保存…" : "保存修改"}
             </Button>
           </div>
         </form>
@@ -222,3 +327,4 @@ export default function DevicesPage() {
     </div>
   );
 }
+

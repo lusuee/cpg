@@ -1,7 +1,7 @@
 export interface Provider {
   id: string;
   name: string;
-  type: "anthropic" | "openai";
+  type: "anthropic" | "openai" | "gemini";
   endpoint: string | null;
   secret_name: string | null;
   enabled: number;
@@ -15,6 +15,9 @@ export interface ModelItem {
   model_name: string;
   display_name: string | null;
   alias: string | null;
+  fallback_model_id: string | null;
+  input_price_per_m: number;
+  output_price_per_m: number;
   enabled: number;
   config_json: string | null;
   provider_name?: string;
@@ -25,6 +28,7 @@ export interface DeviceItem {
   id: string;
   name: string;
   enabled: number;
+  rate_limit_rpm: number;
   last_used_at: number | null;
   created_at: number;
   revoked_at: number | null;
@@ -39,6 +43,7 @@ export interface UsageItem {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cost_usd: number;
   status_code: number | null;
   latency_ms: number | null;
   request_id: string | null;
@@ -49,6 +54,7 @@ export interface MetaRow {
   name: string;
   requests: number;
   tokens: number;
+  cost_usd?: number;
   avg_latency_ms: number;
   errors: number;
 }
@@ -61,10 +67,12 @@ export interface StatsResponse {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;
+    cost_usd?: number;
     avg_latency_ms: number;
     error_count: number;
   };
   byProvider: MetaRow[];
   byModel: MetaRow[];
-  trend: { date: string; requests: number; tokens: number }[];
+  trend: { date: string; requests: number; tokens: number; cost_usd?: number }[];
 }
+

@@ -18,9 +18,10 @@ devicesApp.get("/", async (c) => {
 devicesApp.post("/", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body.name || typeof body.name !== "string") return c.json({ error: "name is required" }, 400);
+  const rateLimitRpm = typeof body.rate_limit_rpm === "number" ? Math.max(0, body.rate_limit_rpm) : 0;
   const token = generateDeviceToken();
   const tokenHash = await hashToken(token);
-  const device = await createDevice(c.env, body.name, tokenHash);
+  const device = await createDevice(c.env, body.name, tokenHash, rateLimitRpm);
   return c.json({ item: device, token }, 201);
 });
 
@@ -29,6 +30,7 @@ devicesApp.put("/:id", async (c) => {
   const row = await updateDevice(c.env, c.req.param("id"), {
     name: typeof body.name === "string" ? body.name : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+    rate_limit_rpm: typeof body.rate_limit_rpm === "number" ? Math.max(0, body.rate_limit_rpm) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: row });

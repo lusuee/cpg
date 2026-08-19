@@ -8,6 +8,7 @@ interface SettingsData {
   app_name: string;
   gateway_base_url: string;
   provider_count: number;
+  cf_access_configured?: boolean;
   providers: Array<{
     id: string;
     name: string;
@@ -23,7 +24,7 @@ export default function SettingsPage() {
   }, []);
 
   const { data, loading, error } = useQuery("settings-data", fetchSettings);
-  const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "curl">("openai");
+  const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "gemini" | "curl">("openai");
 
   if (loading && !data) return <Spinner text="正在加载系统设置…" />;
   if (error && !data) return <div className="text-xs text-rose-600 bg-rose-50 p-4 rounded-xl">{error.message}</div>;
@@ -38,7 +39,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="claude-3-5-sonnet-20241022",  # 或你配置的别名
+    model="gpt-4o",  # 或你配置的模型别名
     messages=[{"role": "user", "content": "你好，请介绍一下你自己！"}]
 )
 print(response.choices[0].message.content)`;
@@ -56,6 +57,20 @@ const message = await anthropic.messages.create({
   messages: [{ role: "user", content: "Hello!" }],
 });
 console.log(message.content);`;
+
+  const geminiCode = `import OpenAI from "openai";
+
+// Gemini 在网关中支持通过标准 OpenAI 协议透明中转调用
+const client = new OpenAI({
+  baseURL: "${baseUrl}/v1",
+  apiKey: "YOUR_DEVICE_TOKEN",
+});
+
+const res = await client.chat.completions.create({
+  model: "gemini-1.5-pro", // 或绑定的 Gemini 别名
+  messages: [{ role: "user", content: "Hello Gemini!" }],
+});
+console.log(res.choices[0].message.content);`;
 
   const curlCode = `curl ${baseUrl}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -90,6 +105,14 @@ console.log(message.content);`;
             <div>
               <dt className="text-slate-400 font-medium">已配置 Provider 数量</dt>
               <dd className="font-semibold text-slate-800 mt-0.5">{data?.provider_count ?? 0} 个</dd>
+            </div>
+            <div>
+              <dt className="text-slate-400 font-medium">Cloudflare Access 零信任</dt>
+              <dd className="mt-0.5 flex items-center gap-1.5">
+                <Badge tone={data?.cf_access_configured ? "green" : "slate"} dot>
+                  {data?.cf_access_configured ? "已配置邮箱白名单" : "未开启（密码登录）"}
+                </Badge>
+              </dd>
             </div>
             <div>
               <dt className="text-slate-400 font-medium">部署运行环境</dt>
@@ -159,6 +182,14 @@ console.log(message.content);`;
               Anthropic SDK (TypeScript)
             </button>
             <button
+              onClick={() => setActiveTab("gemini")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                activeTab === "gemini" ? "bg-amber-50 text-amber-700" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Gemini (via Gateway)
+            </button>
+            <button
               onClick={() => setActiveTab("curl")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                 activeTab === "curl" ? "bg-slate-100 text-slate-800" : "text-slate-600 hover:bg-slate-50"
@@ -171,12 +202,26 @@ console.log(message.content);`;
           <div className="relative rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-200 overflow-x-auto">
             <div className="absolute top-3 right-3">
               <CopyButton
-                text={activeTab === "openai" ? openaiCode : activeTab === "anthropic" ? anthropicCode : curlCode}
+                text={
+                  activeTab === "openai"
+                    ? openaiCode
+                    : activeTab === "anthropic"
+                    ? anthropicCode
+                    : activeTab === "gemini"
+                    ? geminiCode
+                    : curlCode
+                }
                 label="复制代码"
               />
             </div>
             <pre className="whitespace-pre overflow-x-auto leading-relaxed">
-              {activeTab === "openai" ? openaiCode : activeTab === "anthropic" ? anthropicCode : curlCode}
+              {activeTab === "openai"
+                ? openaiCode
+                : activeTab === "anthropic"
+                ? anthropicCode
+                : activeTab === "gemini"
+                ? geminiCode
+                : curlCode}
             </pre>
           </div>
         </div>

@@ -39,8 +39,28 @@ describe("parseUsage", () => {
     expect(parseUsage("anthropic", text)).toEqual({ input_tokens: 5, output_tokens: 11, total_tokens: 16 });
   });
 
+  it("parses Gemini usageMetadata response", () => {
+    const text = JSON.stringify({
+      candidates: [{ content: { parts: [{ text: "Hello" }] } }],
+      usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 25, totalTokenCount: 40 },
+    });
+    expect(parseUsage("gemini", text)).toEqual({ input_tokens: 15, output_tokens: 25, total_tokens: 40 });
+  });
+
+  it("parses Gemini SSE stream with usageMetadata", () => {
+    const text = [
+      'data: {"candidates":[{"content":{"parts":[{"text":"Hi"}]}}]}',
+      '',
+      'data: {"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":12,"totalTokenCount":20}}',
+      '',
+    ].join("\n");
+    expect(parseUsage("gemini", text)).toEqual({ input_tokens: 8, output_tokens: 12, total_tokens: 20 });
+  });
+
   it("returns null when no usage present", () => {
     expect(parseUsage("openai", "not json")).toBeNull();
     expect(parseUsage("anthropic", "{}")).toBeNull();
+    expect(parseUsage("gemini", "{}")).toBeNull();
   });
 });
+

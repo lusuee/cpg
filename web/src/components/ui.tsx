@@ -137,11 +137,13 @@ export function Badge({
   children,
   dot = false,
   className = "",
+  title,
 }: {
   tone?: "green" | "red" | "slate" | "blue" | "amber" | "purple";
   children: ReactNode;
   dot?: boolean;
   className?: string;
+  title?: string;
 }) {
   const tones = {
     green: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20",
@@ -162,7 +164,10 @@ export function Badge({
   };
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tones[tone]} ${className}`}>
+    <span
+      title={title}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tones[tone]} ${className}`}
+    >
       {dot ? <span className={`w-1.5 h-1.5 rounded-full ${dots[tone]}`} /> : null}
       {children}
     </span>

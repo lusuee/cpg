@@ -9,7 +9,7 @@ import { useQuery, invalidateCache } from "../hooks/useQuery";
 interface FormState {
   id?: string;
   name: string;
-  type: "anthropic" | "openai";
+  type: "anthropic" | "openai" | "gemini";
   endpoint: string;
   secret_name: string;
   enabled: boolean;
@@ -95,7 +95,7 @@ export default function ProvidersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">上游 Provider 管理</h2>
-          <p className="text-xs text-slate-500 mt-1">配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic 协议）及其 API 密钥与地址</p>
+          <p className="text-xs text-slate-500 mt-1">配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址</p>
         </div>
         <Button onClick={openCreate} className="shadow-sm">
           <IconPlus />
@@ -121,8 +121,8 @@ export default function ProvidersPage() {
                 <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="py-3 px-2 font-semibold text-slate-900">{p.name}</td>
                   <td className="py-3 px-2">
-                    <Badge tone={p.type === "anthropic" ? "purple" : "blue"}>
-                      {p.type === "anthropic" ? "Anthropic" : "OpenAI"}
+                    <Badge tone={p.type === "anthropic" ? "purple" : p.type === "gemini" ? "amber" : "blue"}>
+                      {p.type === "anthropic" ? "Anthropic" : p.type === "gemini" ? "Gemini" : "OpenAI"}
                     </Badge>
                   </td>
                   <td className="py-3 px-2 font-mono text-slate-500 text-xs max-w-xs truncate">
@@ -176,7 +176,7 @@ export default function ProvidersPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">Provider 标识名称</label>
             <Input
               required
-              placeholder="例如：OpenAI 官方 / DeepSeek / 阶跃星辰"
+              placeholder="例如：OpenAI 官方 / Google Gemini / DeepSeek"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -188,12 +188,13 @@ export default function ProvidersPage() {
               <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as any })}>
                 <option value="openai">OpenAI-compatible</option>
                 <option value="anthropic">Anthropic</option>
+                <option value="gemini">Google Gemini</option>
               </Select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Secret 变量名</label>
               <Input
-                placeholder="例如 OPENAI_API_KEY"
+                placeholder="例如 OPENAI_API_KEY / GEMINI_API_KEY"
                 value={form.secret_name}
                 onChange={(e) => setForm({ ...form, secret_name: e.target.value })}
               />

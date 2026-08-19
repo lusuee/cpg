@@ -60,7 +60,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="今日总请求"
           value={fmtNum(t.request_count)}
@@ -76,8 +76,14 @@ export default function DashboardPage() {
         <StatCard
           label="今日输出 Token"
           value={fmtNum(t.output_tokens)}
-          sub={`总计 ${fmtNum(t.total_tokens)} Tokens`}
+          sub={`总计 ${fmtNum(t.total_tokens)} T`}
           tone="green"
+        />
+        <StatCard
+          label="今日预估费用"
+          value={t.cost_usd ? `$${t.cost_usd.toFixed(4)}` : "$0.0000"}
+          sub="按模型定价估算"
+          tone="purple"
         />
         <StatCard
           label="今日异常请求"
@@ -170,12 +176,13 @@ function StatCard({
   label: string;
   value: string;
   sub: string;
-  tone?: "blue" | "green" | "red" | "slate";
+  tone?: "blue" | "green" | "red" | "purple" | "slate";
 }) {
   const toneBg = {
     blue: "text-blue-600",
     green: "text-emerald-600",
     red: "text-rose-600",
+    purple: "text-purple-600",
     slate: "text-slate-800",
   };
 

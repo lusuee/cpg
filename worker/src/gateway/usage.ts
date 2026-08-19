@@ -2,6 +2,7 @@ import type { ProviderType, TokenUsage } from "../types";
 
 function pushUsageBlocks(blocks: Array<Record<string, any>>, obj: Record<string, any>) {
   if (obj.usage) blocks.push(obj.usage);
+  if (obj.usageMetadata) blocks.push(obj.usageMetadata);
   if (obj.message && obj.message.usage) blocks.push(obj.message.usage);
 }
 
@@ -42,12 +43,23 @@ export function parseUsage(providerType: ProviderType, bodyText: string): TokenU
   let total = 0;
   for (const b of blocks) {
     const inTokens =
-      providerType === "anthropic" ? num(b.input_tokens) : Math.max(num(b.input_tokens), num(b.prompt_tokens ?? b.promptTokens));
+      providerType === "anthropic"
+        ? num(b.input_tokens)
+        : Math.max(
+            num(b.input_tokens),
+            num(b.prompt_tokens ?? b.promptTokens ?? b.promptTokenCount ?? b.prompt_token_count)
+          );
     const outTokens =
-      providerType === "anthropic" ? num(b.output_tokens) : Math.max(num(b.output_tokens), num(b.completion_tokens ?? b.completionTokens));
+      providerType === "anthropic"
+        ? num(b.output_tokens)
+        : Math.max(
+            num(b.output_tokens),
+            num(b.completion_tokens ?? b.completionTokens ?? b.candidatesTokenCount ?? b.candidates_token_count)
+          );
     if (inTokens > 0) input = Math.max(input, inTokens);
     if (outTokens > 0) output = Math.max(output, outTokens);
-    total = Math.max(total, num(b.total_tokens), input + output);
+    const totTokens = num(b.total_tokens ?? b.totalTokens ?? b.totalTokenCount ?? b.total_token_count);
+    total = Math.max(total, totTokens, input + output);
   }
   if (input === 0 && output === 0 && total === 0) return null;
   return { input_tokens: input, output_tokens: output, total_tokens: total > 0 ? total : input + output };

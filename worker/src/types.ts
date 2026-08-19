@@ -1,4 +1,4 @@
-export type ProviderType = "anthropic" | "openai";
+export type ProviderType = "anthropic" | "openai" | "gemini";
 
 export interface Env {
   DB: D1Database;
@@ -7,6 +7,7 @@ export interface Env {
   SESSION_SECRET?: string;
   GATEWAY_BASE_URL?: string;
   APP_NAME?: string;
+  CF_ACCESS_ALLOWED_EMAILS?: string;
   [key: string]: any;
 }
 
@@ -28,6 +29,9 @@ export interface ModelRow {
   model_name: string;
   display_name: string | null;
   alias: string | null;
+  fallback_model_id: string | null;
+  input_price_per_m: number;
+  output_price_per_m: number;
   enabled: number;
   config_json: string | null;
   created_at: number;
@@ -39,6 +43,7 @@ export interface DeviceRow {
   name: string;
   token_hash: string;
   enabled: number;
+  rate_limit_rpm: number;
   last_used_at: number | null;
   created_at: number;
   revoked_at: number | null;
@@ -53,10 +58,25 @@ export interface UsageRow {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cost_usd: number;
   status_code: number | null;
   latency_ms: number | null;
   request_id: string | null;
   created_at: number;
+}
+
+export interface DailyStatsRow {
+  date: string;
+  device_id: string | null;
+  provider_id: string | null;
+  model: string | null;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  avg_latency_ms: number;
+  error_count: number;
 }
 
 export interface ModelWithProvider extends ModelRow {
@@ -71,3 +91,4 @@ export interface TokenUsage {
   output_tokens: number;
   total_tokens: number;
 }
+

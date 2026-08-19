@@ -154,6 +154,7 @@ export default function UsagePage() {
                     <th className="pb-3 px-2 text-right">In Tokens</th>
                     <th className="pb-3 px-2 text-right">Out Tokens</th>
                     <th className="pb-3 px-2 text-right">总 Tokens</th>
+                    <th className="pb-3 px-2 text-right">预估费用</th>
                     <th className="pb-3 px-2 text-right">响应延迟</th>
                     <th className="pb-3 px-2">Request ID</th>
                   </tr>
@@ -185,6 +186,9 @@ export default function UsagePage() {
                       <td className="py-3 px-2 text-right font-mono text-slate-500 text-xs">{fmtNum(u.output_tokens)}</td>
                       <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 text-xs">
                         {fmtNum(u.total_tokens)}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono text-xs text-purple-600 font-medium">
+                        {u.cost_usd ? `$${u.cost_usd.toFixed(4)}` : "$0.0000"}
                       </td>
                       <td className="py-3 px-2 text-right text-xs">
                         {u.latency_ms != null ? (

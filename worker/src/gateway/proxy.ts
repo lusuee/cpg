@@ -1,7 +1,13 @@
 import type { Context } from "hono";
-import type { Env, ModelWithProvider, ProviderType, TokenUsage } from "../types";
+import type { DeviceRow, Env, ModelWithProvider, ProviderType, TokenUsage } from "../types";
 import { authenticateGateway } from "./auth";
-import { findModelAndProvider, recordUsageSafe, randomRequestId } from "../db/repo";
+import {
+  findModelAndProvider,
+  getModelWithProviderById,
+  checkDeviceRateLimit,
+  recordUsageSafe,
+  randomRequestId,
+} from "../db/repo";
 import { parseUsage } from "./usage";
 import { buildUpstreamHeaders, cleanResponseHeaders } from "../utils/http";
 import {
@@ -13,6 +19,7 @@ import {
 const DEFAULT_ENDPOINTS: Record<ProviderType, string> = {
   anthropic: "https://api.anthropic.com/v1",
   openai: "https://api.openai.com/v1",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
 };
 
 function waitUntil(c: Context<{ Bindings: Env }>, p: Promise<void>) {
@@ -25,7 +32,7 @@ interface ProxyContext {
   c: Context<{ Bindings: Env }>;
   kind: "messages" | "chat/completions" | "responses";
   startedAt: number;
-  device: { id: string };
+  device: DeviceRow;
   row: ModelWithProvider;
   upstreamStatus: number;
   latencyMs: number;
@@ -34,7 +41,7 @@ interface ProxyContext {
 }
 
 function buildTargetUrl(row: ModelWithProvider, kind: "messages" | "chat/completions" | "responses"): string {
-  const base = (row.provider_endpoint || DEFAULT_ENDPOINTS[row.provider_type]).replace(/\/+$/, "");
+  const base = (row.provider_endpoint || DEFAULT_ENDPOINTS[row.provider_type] || DEFAULT_ENDPOINTS.openai).replace(/\/+$/, "");
   const suffix = kind === "messages" ? "/messages" : kind === "responses" ? "/responses" : "/chat/completions";
   return base + suffix;
 }
@@ -44,12 +51,19 @@ async function record(
   usage: TokenUsage | null,
   statusCode: number
 ) {
+  const inTokens = usage?.input_tokens ?? 0;
+  const outTokens = usage?.output_tokens ?? 0;
+  const inPrice = ctx.row.input_price_per_m || 0;
+  const outPrice = ctx.row.output_price_per_m || 0;
+  const costUsd = inPrice > 0 || outPrice > 0 ? (inTokens * inPrice + outTokens * outPrice) / 1_000_000 : 0;
+
   await recordUsageSafe(ctx.c.env, {
     device_id: ctx.device.id,
     provider_id: ctx.row.provider_id,
     provider_name: ctx.row.provider_name,
     model: ctx.row.model_name,
     usage,
+    cost_usd: costUsd,
     status_code: statusCode,
     latency_ms: ctx.latencyMs,
     request_id: ctx.requestId,
@@ -95,62 +109,46 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   return res;
 }
 
-export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "messages" | "chat/completions" | "responses") {
-  const device = await authenticateGateway(c);
-  if (!device) return c.json({ error: "unauthorized" }, 401);
-
-  const rawBody = await c.req.text();
-  let body: any;
-  try {
-    body = JSON.parse(rawBody);
-  } catch {
-    return c.json({ error: "invalid_json" }, 400);
-  }
-  const modelKey = body?.model;
-  if (typeof modelKey !== "string" || !modelKey) return c.json({ error: "missing_model" }, 400);
-
-  const row = await findModelAndProvider(c.env, modelKey);
-  if (!row) return c.json({ error: "model_not_found", model: modelKey }, 404);
-
-  if (kind === "messages" && row.provider_type !== "anthropic") {
-    return c.json({ error: "unsupported_provider_for_path", message: "/v1/messages requires an anthropic provider" }, 400);
-  }
-  if ((kind === "chat/completions" || kind === "responses") && row.provider_type !== "openai") {
-    return c.json({ error: "unsupported_provider_for_path", message: `/${kind} requires an openai provider` }, 400);
-  }
-
+async function executeProxyAttempt(
+  c: Context<{ Bindings: Env }>,
+  kind: "messages" | "chat/completions" | "responses",
+  device: DeviceRow,
+  row: ModelWithProvider,
+  body: any,
+  requestId: string
+): Promise<Response | null> {
   const secretName = row.provider_secret_name;
-  if (!secretName) return c.json({ error: "provider_secret_not_configured" }, 502);
+  if (!secretName) return null;
   const upstreamKey = (c.env as Record<string, unknown>)[secretName];
-  if (typeof upstreamKey !== "string" || !upstreamKey) {
-    return c.json({ error: "provider_secret_not_configured", message: `Secret ${secretName} is not set` }, 502);
-  }
+  if (typeof upstreamKey !== "string" || !upstreamKey) return null;
 
-  if (body.model !== row.model_name) body.model = row.model_name;
-  const isStream = body.stream === true;
-  const requestId = randomRequestId();
+  const reqBody = { ...body, model: row.model_name };
+  const isStream = reqBody.stream === true;
   const startedAt = Date.now();
-
   const headers = buildUpstreamHeaders(c.req.raw.headers, row.provider_type, upstreamKey);
 
-  // For responses kind: seamlessly adapt through /chat/completions with SSE/JSON translation.
-  // This guarantees 100% compatibility across all OpenAI-compatible providers (DeepSeek, xAI, OpenAI, etc.).
   if (kind === "responses") {
     const target = buildTargetUrl(row, "chat/completions");
-    const chatBody = convertResponsesRequest(body);
+    const chatBody = convertResponsesRequest(reqBody);
     headers.set("Content-Type", "application/json");
 
-    const approxInputTokens = Math.max(
-      1,
-      Math.ceil(JSON.stringify(chatBody.messages).length / 4)
-    );
+    const approxInputTokens = Math.max(1, Math.ceil(JSON.stringify(chatBody.messages).length / 4));
 
-    const upstreamRes = await fetch(target, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(chatBody),
-      redirect: "follow",
-    });
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await fetch(target, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(chatBody),
+        redirect: "follow",
+      });
+    } catch {
+      return null;
+    }
+
+    if (!upstreamRes.ok && upstreamRes.status >= 500) {
+      return null;
+    }
 
     const pctx: ProxyContext = {
       c,
@@ -226,12 +224,21 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   }
 
   const target = buildTargetUrl(row, kind);
-  const upstreamRes = await fetch(target, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    redirect: "follow",
-  });
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await fetch(target, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(reqBody),
+      redirect: "follow",
+    });
+  } catch {
+    return null;
+  }
+
+  if (!upstreamRes.ok && (upstreamRes.status >= 500 || upstreamRes.status === 429)) {
+    return null;
+  }
 
   const pctx: ProxyContext = {
     c,
@@ -258,11 +265,66 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   return res;
 }
 
+export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "messages" | "chat/completions" | "responses") {
+  const device = await authenticateGateway(c);
+  if (!device) return c.json({ error: "unauthorized" }, 401);
+
+  if (device.rate_limit_rpm && device.rate_limit_rpm > 0) {
+    const allowed = await checkDeviceRateLimit(c.env, device.id, device.rate_limit_rpm);
+    if (!allowed) {
+      c.header("Retry-After", "60");
+      return c.json(
+        { error: "rate_limit_exceeded", message: `Device rate limit of ${device.rate_limit_rpm} RPM exceeded` },
+        429
+      );
+    }
+  }
+
+  const rawBody = await c.req.text();
+  let body: any;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const modelKey = body?.model;
+  if (typeof modelKey !== "string" || !modelKey) return c.json({ error: "missing_model" }, 400);
+
+  let row = await findModelAndProvider(c.env, modelKey);
+  if (!row) return c.json({ error: "model_not_found", model: modelKey }, 404);
+
+  if (kind === "messages" && row.provider_type !== "anthropic") {
+    return c.json({ error: "unsupported_provider_for_path", message: "/v1/messages requires an anthropic provider" }, 400);
+  }
+  if ((kind === "chat/completions" || kind === "responses") && row.provider_type === "anthropic") {
+    return c.json({ error: "unsupported_provider_for_path", message: `/${kind} requires an openai or gemini provider` }, 400);
+  }
+
+  const requestId = randomRequestId();
+
+  // Primary attempt
+  let response = await executeProxyAttempt(c, kind, device, row, body, requestId);
+
+  // If primary attempt failed and fallback_model_id is configured, attempt fallback
+  if (!response && row.fallback_model_id) {
+    const fallbackRow = await getModelWithProviderById(c.env, row.fallback_model_id);
+    if (fallbackRow) {
+      response = await executeProxyAttempt(c, kind, device, fallbackRow, body, requestId);
+    }
+  }
+
+  if (!response) {
+    return c.json({ error: "upstream_service_unavailable", message: "Failed to fetch response from primary and fallback upstream" }, 502);
+  }
+
+  return response;
+}
+
 export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
   const device = await authenticateGateway(c);
   if (!device) return c.json({ error: "unauthorized" }, 401);
   const res = await c.env.DB.prepare(
-    "SELECT m.id, m.model_name, m.display_name, m.alias, m.created_at, p.name as owned_by " +
+    "SELECT m.id, m.model_name, m.display_name, m.alias, m.fallback_model_id, m.input_price_per_m, m.output_price_per_m, m.created_at, p.name as owned_by " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY p.name, m.model_name"
   ).all();
@@ -273,6 +335,10 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
     owned_by: r.owned_by || "",
     display_name: r.display_name || null,
     alias: r.alias || null,
+    fallback_model_id: r.fallback_model_id || null,
+    input_price_per_m: r.input_price_per_m || 0,
+    output_price_per_m: r.output_price_per_m || 0,
   }));
   return c.json({ object: "list", data });
 }
+

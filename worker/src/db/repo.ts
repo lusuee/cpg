@@ -1,8 +1,13 @@
-import type { DeviceRow, Env, ModelWithProvider, ProviderRow, TokenUsage, UsageRow } from "../types";
+import type { DailyStatsRow, DeviceRow, Env, ModelWithProvider, ProviderRow, ProviderType, TokenUsage, UsageRow } from "../types";
 import { newId, randomUUID } from "../utils/crypto";
 import { ensureSchema } from "./schema";
 
 const now = () => Date.now();
+
+function normalizeProviderType(type: string): ProviderType {
+  if (type === "openai" || type === "gemini") return type;
+  return "anthropic";
+}
 
 // ---------- Providers ----------
 
@@ -27,7 +32,7 @@ export async function createProvider(
   const row: ProviderRow = {
     id,
     name: data.name,
-    type: data.type === "openai" ? "openai" : "anthropic",
+    type: normalizeProviderType(data.type),
     endpoint: data.endpoint || null,
     secret_name: data.secret_name || null,
     enabled: data.enabled === false ? 0 : 1,
@@ -53,7 +58,7 @@ export async function updateProvider(
   const next: ProviderRow = {
     ...existing,
     name: data.name ?? existing.name,
-    type: (data.type === "openai" || data.type === "anthropic" ? data.type : existing.type) as ProviderRow["type"],
+    type: data.type ? normalizeProviderType(data.type) : existing.type,
     endpoint: data.endpoint !== undefined ? data.endpoint : existing.endpoint,
     secret_name: data.secret_name !== undefined ? data.secret_name : existing.secret_name,
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
@@ -92,6 +97,13 @@ export async function getModel(env: Env, id: string) {
   return (await env.DB.prepare("SELECT * FROM models WHERE id = ?").bind(id).first()) as ModelWithProvider | null;
 }
 
+export async function getModelWithProviderById(env: Env, id: string): Promise<ModelWithProvider | null> {
+  return (await env.DB.prepare(
+    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
+      "FROM models m JOIN providers p ON p.id = m.provider_id WHERE m.id = ? AND m.enabled = 1 AND p.enabled = 1"
+  ).bind(id).first()) as ModelWithProvider | null;
+}
+
 export async function createModel(
   env: Env,
   data: {
@@ -99,6 +111,9 @@ export async function createModel(
     model_name: string;
     display_name?: string;
     alias?: string;
+    fallback_model_id?: string | null;
+    input_price_per_m?: number;
+    output_price_per_m?: number;
     enabled?: boolean;
     config_json?: string;
   }
@@ -111,15 +126,32 @@ export async function createModel(
     model_name: data.model_name,
     display_name: data.display_name || null,
     alias: data.alias || null,
+    fallback_model_id: data.fallback_model_id || null,
+    input_price_per_m: typeof data.input_price_per_m === "number" ? data.input_price_per_m : 0,
+    output_price_per_m: typeof data.output_price_per_m === "number" ? data.output_price_per_m : 0,
     enabled: data.enabled === false ? 0 : 1,
     config_json: data.config_json || null,
     created_at: t,
     updated_at: t,
   };
   await env.DB.prepare(
-    "INSERT INTO models (id, provider_id, model_name, display_name, alias, enabled, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO models (id, provider_id, model_name, display_name, alias, fallback_model_id, input_price_per_m, output_price_per_m, enabled, config_json, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(row.id, row.provider_id, row.model_name, row.display_name, row.alias, row.enabled, row.config_json, row.created_at, row.updated_at)
+    .bind(
+      row.id,
+      row.provider_id,
+      row.model_name,
+      row.display_name,
+      row.alias,
+      row.fallback_model_id,
+      row.input_price_per_m,
+      row.output_price_per_m,
+      row.enabled,
+      row.config_json,
+      row.created_at,
+      row.updated_at
+    )
     .run();
   return row;
 }
@@ -132,6 +164,9 @@ export async function updateModel(
     model_name?: string;
     display_name?: string | null;
     alias?: string | null;
+    fallback_model_id?: string | null;
+    input_price_per_m?: number;
+    output_price_per_m?: number;
     enabled?: boolean;
     config_json?: string | null;
   }
@@ -144,14 +179,29 @@ export async function updateModel(
     model_name: data.model_name ?? existing.model_name,
     display_name: data.display_name !== undefined ? data.display_name : existing.display_name,
     alias: data.alias !== undefined ? data.alias : existing.alias,
+    fallback_model_id: data.fallback_model_id !== undefined ? data.fallback_model_id : (existing.fallback_model_id || null),
+    input_price_per_m: typeof data.input_price_per_m === "number" ? data.input_price_per_m : (existing.input_price_per_m || 0),
+    output_price_per_m: typeof data.output_price_per_m === "number" ? data.output_price_per_m : (existing.output_price_per_m || 0),
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     config_json: data.config_json !== undefined ? data.config_json : existing.config_json,
     updated_at: now(),
   };
   await env.DB.prepare(
-    "UPDATE models SET provider_id = ?, model_name = ?, display_name = ?, alias = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
+    "UPDATE models SET provider_id = ?, model_name = ?, display_name = ?, alias = ?, fallback_model_id = ?, input_price_per_m = ?, output_price_per_m = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
   )
-    .bind(next.provider_id, next.model_name, next.display_name, next.alias, next.enabled, next.config_json, next.updated_at, id)
+    .bind(
+      next.provider_id,
+      next.model_name,
+      next.display_name,
+      next.alias,
+      next.fallback_model_id,
+      next.input_price_per_m,
+      next.output_price_per_m,
+      next.enabled,
+      next.config_json,
+      next.updated_at,
+      id
+    )
     .run();
   return next;
 }
@@ -204,7 +254,7 @@ export async function listPublicModels(env: Env) {
 export async function listDevices(env: Env) {
   await ensureSchema(env);
   const res = await env.DB.prepare(
-    "SELECT id, name, enabled, last_used_at, created_at, revoked_at FROM devices ORDER BY created_at DESC"
+    "SELECT id, name, enabled, rate_limit_rpm, last_used_at, created_at, revoked_at FROM devices ORDER BY created_at DESC"
   ).all();
   return res.results as Array<Record<string, unknown>>;
 }
@@ -213,24 +263,25 @@ export async function getDeviceByHash(env: Env, tokenHash: string) {
   return (await env.DB.prepare("SELECT * FROM devices WHERE token_hash = ?").bind(tokenHash).first<DeviceRow>()) as DeviceRow | null;
 }
 
-export async function createDevice(env: Env, name: string, tokenHash: string) {
+export async function createDevice(env: Env, name: string, tokenHash: string, rate_limit_rpm: number = 0) {
   const id = newId("dev");
   const t = now();
   await env.DB.prepare(
-    "INSERT INTO devices (id, name, token_hash, enabled, created_at) VALUES (?, ?, ?, 1, ?)"
-  ).bind(id, name, tokenHash, t).run();
-  return { id, name, created_at: t };
+    "INSERT INTO devices (id, name, token_hash, enabled, rate_limit_rpm, created_at) VALUES (?, ?, ?, 1, ?, ?)"
+  ).bind(id, name, tokenHash, rate_limit_rpm, t).run();
+  return { id, name, rate_limit_rpm, created_at: t };
 }
 
-export async function updateDevice(env: Env, id: string, data: { name?: string; enabled?: boolean }) {
+export async function updateDevice(env: Env, id: string, data: { name?: string; enabled?: boolean; rate_limit_rpm?: number }) {
   const existing = await env.DB.prepare("SELECT * FROM devices WHERE id = ?").bind(id).first<Record<string, any>>();
   if (!existing) return null;
   const next = {
     ...existing,
     name: data.name ?? existing.name,
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
+    rate_limit_rpm: data.rate_limit_rpm !== undefined ? data.rate_limit_rpm : (existing.rate_limit_rpm || 0),
   };
-  await env.DB.prepare("UPDATE devices SET name = ?, enabled = ? WHERE id = ?").bind(next.name, next.enabled, id).run();
+  await env.DB.prepare("UPDATE devices SET name = ?, enabled = ?, rate_limit_rpm = ? WHERE id = ?").bind(next.name, next.enabled, next.rate_limit_rpm, id).run();
   return next;
 }
 
@@ -245,6 +296,15 @@ export async function touchDevice(env: Env, id: string) {
   await env.DB.prepare("UPDATE devices SET last_used_at = ? WHERE id = ?").bind(now(), id).run();
 }
 
+export async function checkDeviceRateLimit(env: Env, deviceId: string, rpm: number): Promise<boolean> {
+  if (!rpm || rpm <= 0) return true;
+  const oneMinuteAgo = Date.now() - 60000;
+  const res = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM usage WHERE device_id = ? AND created_at >= ?"
+  ).bind(deviceId, oneMinuteAgo).first<{ count: number }>();
+  return (res?.count ?? 0) < rpm;
+}
+
 // ---------- Usage ----------
 
 export async function insertUsage(
@@ -255,6 +315,7 @@ export async function insertUsage(
     provider_name: string | null;
     model: string | null;
     usage: TokenUsage | null;
+    cost_usd?: number;
     status_code: number | null;
     latency_ms: number | null;
     request_id: string;
@@ -262,9 +323,10 @@ export async function insertUsage(
   }
 ) {
   const { input_tokens, output_tokens, total_tokens } = data.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+  const cost = typeof data.cost_usd === "number" ? data.cost_usd : 0;
   await env.DB.prepare(
-    "INSERT INTO usage (device_id, provider_id, provider_name, model, input_tokens, output_tokens, total_tokens, status_code, latency_ms, request_id, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO usage (device_id, provider_id, provider_name, model, input_tokens, output_tokens, total_tokens, cost_usd, status_code, latency_ms, request_id, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       data.device_id,
@@ -274,6 +336,7 @@ export async function insertUsage(
       input_tokens,
       output_tokens,
       total_tokens,
+      cost,
       data.status_code,
       data.latency_ms,
       data.request_id,
@@ -302,7 +365,7 @@ export async function listUsage(
   return rows.results as unknown as UsageRow[];
 }
 
-// ---------- Stats ----------
+// ---------- Stats & Aggregation ----------
 
 export async function statsSummary(env: Env, since: number) {
   await ensureSchema(env);
@@ -311,6 +374,7 @@ export async function statsSummary(env: Env, since: number) {
       "COALESCE(SUM(input_tokens), 0) as input_tokens, " +
       "COALESCE(SUM(output_tokens), 0) as output_tokens, " +
       "COALESCE(SUM(total_tokens), 0) as total_tokens, " +
+      "COALESCE(SUM(cost_usd), 0) as cost_usd, " +
       "COALESCE(AVG(latency_ms), 0) as avg_latency_ms, " +
       "COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count " +
       "FROM usage WHERE created_at >= ?"
@@ -321,6 +385,7 @@ export async function statsSummary(env: Env, since: number) {
 export async function statsByProvider(env: Env, since: number) {
   const res = await env.DB.prepare(
     "SELECT COALESCE(provider_name, 'unknown') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens), 0) as tokens, " +
+      "COALESCE(SUM(cost_usd), 0) as cost_usd, " +
       "COALESCE(AVG(latency_ms), 0) as avg_latency_ms, COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as errors " +
       "FROM usage WHERE created_at >= ? GROUP BY provider_name ORDER BY requests DESC"
   ).bind(since).all();
@@ -330,6 +395,7 @@ export async function statsByProvider(env: Env, since: number) {
 export async function statsByModel(env: Env, since: number) {
   const res = await env.DB.prepare(
     "SELECT COALESCE(model, 'unknown') as name, COUNT(*) as requests, COALESCE(SUM(total_tokens), 0) as tokens, " +
+      "COALESCE(SUM(cost_usd), 0) as cost_usd, " +
       "COALESCE(AVG(latency_ms), 0) as avg_latency_ms, COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as errors " +
       "FROM usage WHERE created_at >= ? GROUP BY model ORDER BY requests DESC"
   ).bind(since).all();
@@ -339,7 +405,7 @@ export async function statsByModel(env: Env, since: number) {
 export async function statsTrend(env: Env, since: number) {
   const res = await env.DB.prepare(
     "SELECT strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) as date, COUNT(*) as requests, " +
-      "COALESCE(SUM(total_tokens), 0) as tokens FROM usage WHERE created_at >= ? GROUP BY date ORDER BY date ASC"
+      "COALESCE(SUM(total_tokens), 0) as tokens, COALESCE(SUM(cost_usd), 0) as cost_usd FROM usage WHERE created_at >= ? GROUP BY date ORDER BY date ASC"
   ).bind(since).all();
   return res.results;
 }
@@ -353,6 +419,37 @@ export async function recordUsageSafe(env: Env, data: Parameters<typeof insertUs
   }
 }
 
+export async function aggregateDailyStats(env: Env, targetDate?: string): Promise<{ aggregated: number }> {
+  await ensureSchema(env);
+  const dateClause = targetDate
+    ? "strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) = ?"
+    : "created_at >= " + (Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+  const sql = `
+    INSERT OR REPLACE INTO daily_stats (date, device_id, provider_id, model, request_count, input_tokens, output_tokens, total_tokens, cost_usd, avg_latency_ms, error_count)
+    SELECT 
+      strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) as date,
+      device_id,
+      provider_id,
+      model,
+      COUNT(*) as request_count,
+      COALESCE(SUM(input_tokens), 0) as input_tokens,
+      COALESCE(SUM(output_tokens), 0) as output_tokens,
+      COALESCE(SUM(total_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd,
+      COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
+      COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count
+    FROM usage
+    WHERE ${dateClause}
+    GROUP BY date, device_id, provider_id, model
+  `;
+
+  const stmt = targetDate ? env.DB.prepare(sql).bind(targetDate) : env.DB.prepare(sql);
+  const res = await stmt.run();
+  return { aggregated: res.meta.changes };
+}
+
 export function randomRequestId(): string {
   return randomUUID();
 }
+

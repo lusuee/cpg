@@ -43,6 +43,9 @@ export function buildUpstreamHeaders(
 
   if (providerType === "anthropic") {
     headers.set("x-api-key", upstreamKey);
+  } else if (providerType === "gemini") {
+    headers.set("x-goog-api-key", upstreamKey);
+    headers.set("Authorization", `Bearer ${upstreamKey}`);
   } else {
     headers.set("Authorization", `Bearer ${upstreamKey}`);
   }

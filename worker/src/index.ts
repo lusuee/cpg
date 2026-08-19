@@ -3,6 +3,7 @@ import type { Env } from "./types";
 import { adminApp } from "./admin";
 import { gatewayApp } from "./gateway";
 import { ensureSchema } from "./db/schema";
+import { aggregateDailyStats } from "./db/repo";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -36,4 +37,8 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
+  scheduled: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(aggregateDailyStats(env));
+  },
 };
+

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { listUsage, statsSummary, statsByProvider, statsByModel, statsTrend } from "../db/repo";
+import { listUsage, statsSummary, statsByProvider, statsByModel, statsTrend, aggregateDailyStats } from "../db/repo";
 
 export const usageApp = new Hono<{ Bindings: Env }>();
 
@@ -50,4 +50,10 @@ usageApp.get("/stats", async (c) => {
     byModel,
     trend,
   });
+});
+
+usageApp.post("/aggregate", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const res = await aggregateDailyStats(c.env, body.date);
+  return c.json({ ok: true, aggregated: res.aggregated });
 });

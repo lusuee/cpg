@@ -17,6 +17,7 @@ settingsApp.get("/", async (c) => {
     app_name: c.env.APP_NAME || "Personal AI Gateway",
     gateway_base_url,
     provider_count: providers.length,
+    cf_access_configured: Boolean(c.env.CF_ACCESS_ALLOWED_EMAILS),
     providers: providers.map((p) => ({
       id: p.id,
       name: p.name,
