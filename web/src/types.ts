@@ -3,6 +3,9 @@ export interface Provider {
   name: string;
   type: "anthropic" | "openai" | "gemini";
   endpoint: string | null;
+  api_key?: string | null;
+  api_key_masked?: string | null;
+  api_key_configured?: boolean;
   secret_name: string | null;
   enabled: number;
   config_json: string | null;

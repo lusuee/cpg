@@ -17,6 +17,7 @@ export interface ProviderRow {
   name: string;
   type: ProviderType;
   endpoint: string | null;
+  api_key: string | null;
   secret_name: string | null;
   enabled: number;
   config_json: string | null;
@@ -88,6 +89,7 @@ export interface DailyStatsRow {
 export interface ModelWithProvider extends ModelRow {
   provider_name: string;
   provider_type: ProviderType;
+  provider_api_key: string | null;
   provider_secret_name: string | null;
   provider_endpoint: string | null;
 }

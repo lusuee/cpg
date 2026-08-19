@@ -15,6 +15,7 @@ interface SettingsData {
     name: string;
     type: string;
     enabled: boolean;
+    api_key_configured?: boolean;
     secret_configured: boolean;
   }>;
 }
@@ -156,8 +157,8 @@ console.log(res.choices[0].message.content);`;
                       </Badge>
                     </td>
                     <td className="py-2.5 px-2">
-                      <Badge tone={p.secret_configured ? "green" : "red"} dot>
-                        {p.secret_configured ? "Secret 正常" : "缺少 Secret"}
+                      <Badge tone={p.api_key_configured || p.secret_configured ? "green" : "red"} dot>
+                        {p.api_key_configured || p.secret_configured ? "密钥正常" : "未配置密钥"}
                       </Badge>
                     </td>
                   </tr>

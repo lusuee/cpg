@@ -24,7 +24,8 @@ settingsApp.get("/", async (c) => {
       name: p.name,
       type: p.type,
       enabled: Boolean(p.enabled),
-      secret_configured: Boolean(p.secret_name && (c.env as Record<string, unknown>)[p.secret_name]),
+      api_key_configured: Boolean(p.api_key || (p.secret_name && (c.env as Record<string, unknown>)[p.secret_name])),
+      secret_configured: Boolean(p.api_key || (p.secret_name && (c.env as Record<string, unknown>)[p.secret_name])),
     })),
   });
 });

@@ -4,12 +4,33 @@ import { createProvider, deleteProvider, listProviders, updateProvider, getProvi
 
 export const providersApp = new Hono<{ Bindings: Env }>();
 
+export function maskApiKey(key: string | null | undefined): string | null {
+  if (!key) return null;
+  const trimmed = key.trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= 8) {
+    return "••••••••";
+  }
+  const prefix = trimmed.slice(0, trimmed.length >= 12 ? 6 : 3);
+  const suffix = trimmed.slice(-4);
+  return `${prefix}••••${suffix}`;
+}
+
+export function publicProvider(row: ProviderRow, env: Env) {
+  const hasDbKey = Boolean(row.api_key && row.api_key.trim());
+  const hasEnvSecret = Boolean(row.secret_name && (env as Record<string, unknown>)[row.secret_name]);
+  return {
+    ...row,
+    api_key: undefined,
+    api_key_configured: hasDbKey || hasEnvSecret,
+    api_key_masked: hasDbKey ? maskApiKey(row.api_key) : null,
+    secret_configured: hasDbKey || hasEnvSecret,
+  };
+}
+
 providersApp.get("/", async (c) => {
   const rows = await listProviders(c.env);
-  const result = rows.map((p) => ({
-    ...p,
-    secret_configured: Boolean(p.secret_name && (c.env as Record<string, unknown>)[p.secret_name]),
-  }));
+  const result = rows.map((p) => publicProvider(p, c.env));
   return c.json({ items: result });
 });
 
@@ -20,10 +41,11 @@ providersApp.post("/", async (c) => {
     return c.json({ error: "type must be anthropic, openai or gemini" }, 400);
   }
   const row = await createProvider(c.env, {
-    name: body.name,
+    name: body.name.trim(),
     type: body.type,
-    endpoint: typeof body.endpoint === "string" ? body.endpoint : undefined,
-    secret_name: typeof body.secret_name === "string" ? body.secret_name : undefined,
+    endpoint: typeof body.endpoint === "string" ? body.endpoint.trim() : undefined,
+    api_key: typeof body.api_key === "string" ? body.api_key.trim() : undefined,
+    secret_name: typeof body.secret_name === "string" ? body.secret_name.trim() : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : true,
     config_json: typeof body.config_json === "string" ? body.config_json : undefined,
   });
@@ -40,6 +62,7 @@ providersApp.put("/:id", async (c) => {
     name: typeof body.name === "string" ? body.name.trim() : undefined,
     type: body.type,
     endpoint: "endpoint" in body ? (body.endpoint ? String(body.endpoint).trim() : null) : undefined,
+    api_key: "api_key" in body ? (body.api_key ? String(body.api_key).trim() : null) : undefined,
     secret_name: "secret_name" in body ? (body.secret_name ? String(body.secret_name).trim() : null) : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     config_json: "config_json" in body ? (body.config_json ? String(body.config_json).trim() : null) : undefined,
@@ -59,12 +82,11 @@ providersApp.post("/:id/fetch-models", async (c) => {
   const p = await getProvider(c.env, id);
   if (!p) return c.json({ error: "provider_not_found" }, 404);
 
-  const secretName = p.secret_name;
-  const upstreamKey = secretName ? (c.env as Record<string, unknown>)[secretName] : undefined;
+  const upstreamKey = p.api_key || (p.secret_name ? (c.env as Record<string, unknown>)[p.secret_name] : undefined);
   if (!upstreamKey || typeof upstreamKey !== "string") {
     return c.json({
-      error: "provider_secret_not_configured",
-      message: `未找到 Secret 密钥「${secretName || "未指定"}」，请先在 Cloudflare 环境变量中添加`,
+      error: "provider_key_not_configured",
+      message: `未配置 API 密钥，请先在 Provider 编辑窗口中输入 API Key 或配置 Secret`,
     }, 400);
   }
 
@@ -116,10 +138,3 @@ providersApp.post("/:id/fetch-models", async (c) => {
     return c.json({ error: "network_error", message: err.message || "请求上游超时或网络异常" }, 502);
   }
 });
-
-function publicProvider(row: ProviderRow, env: Env) {
-  return {
-    ...row,
-    secret_configured: Boolean(row.secret_name && (env as Record<string, unknown>)[row.secret_name]),
-  };
-}

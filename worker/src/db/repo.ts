@@ -25,7 +25,7 @@ export async function getProvider(env: Env, id: string): Promise<ProviderRow | n
 
 export async function createProvider(
   env: Env,
-  data: { name: string; type: string; endpoint?: string; secret_name?: string; enabled?: boolean; config_json?: string }
+  data: { name: string; type: string; endpoint?: string | null; api_key?: string | null; secret_name?: string | null; enabled?: boolean; config_json?: string | null }
 ): Promise<ProviderRow> {
   const id = newId("prov");
   const t = now();
@@ -34,6 +34,7 @@ export async function createProvider(
     name: data.name,
     type: normalizeProviderType(data.type),
     endpoint: data.endpoint || null,
+    api_key: data.api_key || null,
     secret_name: data.secret_name || null,
     enabled: data.enabled === false ? 0 : 1,
     config_json: data.config_json || null,
@@ -41,9 +42,9 @@ export async function createProvider(
     updated_at: t,
   };
   await env.DB.prepare(
-    "INSERT INTO providers (id, name, type, endpoint, secret_name, enabled, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO providers (id, name, type, endpoint, api_key, secret_name, enabled, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(row.id, row.name, row.type, row.endpoint, row.secret_name, row.enabled, row.config_json, row.created_at, row.updated_at)
+    .bind(row.id, row.name, row.type, row.endpoint, row.api_key, row.secret_name, row.enabled, row.config_json, row.created_at, row.updated_at)
     .run();
   return row;
 }
@@ -51,7 +52,7 @@ export async function createProvider(
 export async function updateProvider(
   env: Env,
   id: string,
-  data: { name?: string; type?: string; endpoint?: string | null; secret_name?: string | null; enabled?: boolean; config_json?: string | null }
+  data: { name?: string; type?: string; endpoint?: string | null; api_key?: string | null; secret_name?: string | null; enabled?: boolean; config_json?: string | null }
 ): Promise<ProviderRow | null> {
   const existing = await getProvider(env, id);
   if (!existing) return null;
@@ -60,15 +61,16 @@ export async function updateProvider(
     name: data.name ?? existing.name,
     type: data.type ? normalizeProviderType(data.type) : existing.type,
     endpoint: data.endpoint !== undefined ? data.endpoint : existing.endpoint,
+    api_key: data.api_key !== undefined ? data.api_key : existing.api_key,
     secret_name: data.secret_name !== undefined ? data.secret_name : existing.secret_name,
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     config_json: data.config_json !== undefined ? data.config_json : existing.config_json,
     updated_at: now(),
   };
   await env.DB.prepare(
-    "UPDATE providers SET name = ?, type = ?, endpoint = ?, secret_name = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
+    "UPDATE providers SET name = ?, type = ?, endpoint = ?, api_key = ?, secret_name = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
   )
-    .bind(next.name, next.type, next.endpoint, next.secret_name, next.enabled, next.config_json, next.updated_at, id)
+    .bind(next.name, next.type, next.endpoint, next.api_key, next.secret_name, next.enabled, next.config_json, next.updated_at, id)
     .run();
   return next;
 }
@@ -87,7 +89,7 @@ export async function deleteProvider(env: Env, id: string): Promise<boolean> {
 export async function listModels(env: Env) {
   await ensureSchema(env);
   const res = await env.DB.prepare(
-    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
+    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.api_key as provider_api_key, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m LEFT JOIN providers p ON p.id = m.provider_id ORDER BY m.created_at DESC"
   ).all<ModelWithProvider>();
   return res.results as unknown as ModelWithProvider[];
@@ -99,7 +101,7 @@ export async function getModel(env: Env, id: string) {
 
 export async function getModelWithProviderById(env: Env, id: string): Promise<ModelWithProvider | null> {
   return (await env.DB.prepare(
-    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
+    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.api_key as provider_api_key, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m JOIN providers p ON p.id = m.provider_id WHERE m.id = ? AND m.enabled = 1 AND p.enabled = 1"
   ).bind(id).first()) as ModelWithProvider | null;
 }
@@ -245,7 +247,7 @@ export async function batchDeleteModels(env: Env, ids: string[]): Promise<number
 
 export async function findModelAndProvider(env: Env, modelKey: string): Promise<ModelWithProvider | null> {
   return (await env.DB.prepare(
-    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
+    "SELECT m.*, p.name as provider_name, p.type as provider_type, p.api_key as provider_api_key, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 AND (m.model_name = ? OR m.alias = ?) " +
       "ORDER BY (CASE WHEN m.model_name = ? THEN 0 ELSE 1 END), m.id ASC LIMIT 1"

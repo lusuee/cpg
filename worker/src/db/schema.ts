@@ -6,6 +6,7 @@ export const INIT_STATEMENTS = [
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     endpoint TEXT,
+    api_key TEXT,
     secret_name TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     config_json TEXT,
@@ -83,6 +84,7 @@ export const INIT_STATEMENTS = [
 ];
 
 const MIGRATION_ALTERS = [
+  "ALTER TABLE providers ADD COLUMN api_key TEXT",
   "ALTER TABLE models ADD COLUMN fallback_model_id TEXT",
   "ALTER TABLE models ADD COLUMN input_price_per_m REAL NOT NULL DEFAULT 0",
   "ALTER TABLE models ADD COLUMN output_price_per_m REAL NOT NULL DEFAULT 0",

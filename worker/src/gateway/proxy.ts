@@ -207,9 +207,9 @@ async function executeProxyAttempt(
   requestId: string,
   cacheKey?: string
 ): Promise<Response | null> {
-  const secretName = row.provider_secret_name;
-  if (!secretName) return null;
-  const upstreamKey = (c.env as Record<string, unknown>)[secretName];
+  const upstreamKey =
+    row.provider_api_key ||
+    (row.provider_secret_name ? (c.env as Record<string, unknown>)[row.provider_secret_name] : undefined);
   if (typeof upstreamKey !== "string" || !upstreamKey) return null;
 
   const reqBody = { ...body, model: row.model_name };
