@@ -9,10 +9,15 @@ authApp.post("/login", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const password = typeof body.password === "string" ? body.password : "";
   const expected = c.env.ADMIN_SECRET;
-  if (!expected || !password || !safeEqual(password, expected)) {
+  if (!expected) {
+    return c.json({ error: "ADMIN_SECRET_NOT_CONFIGURED: 请在 Cloudflare 环境变量中配置 ADMIN_SECRET" }, 500);
+  }
+  const match = safeEqual(password, expected) || safeEqual(password.trim(), expected.trim());
+  if (!password || !match) {
     return c.json({ error: "invalid_credentials" }, 401);
   }
-  const session = await signSession(c.env.SESSION_SECRET || "");
+  const sessionSecret = c.env.SESSION_SECRET || c.env.ADMIN_SECRET || "";
+  const session = await signSession(sessionSecret);
   c.header("Set-Cookie", buildSessionCookie(session));
   return c.json({ ok: true });
 });
