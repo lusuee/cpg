@@ -79,6 +79,25 @@ export default function ModelsPage() {
   const [syncError, setSyncError] = useState("");
   const [syncSubmitting, setSyncSubmitting] = useState(false);
 
+  // Collapsible routing logic banner state
+  const [showBanner, setShowBanner] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("cpg_show_model_banner") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleBanner = () => {
+    setShowBanner((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("cpg_show_model_banner", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   function openCreate() {
     setForm({
       provider_id: providers[0]?.id || "",
@@ -461,71 +480,66 @@ wire_specification = "openai"
         </div>
       </div>
 
-      {/* Model Matching & Routing Logic Banner */}
-      <div className="rounded-2xl border border-blue-100 dark:border-blue-900/60 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/60 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-purple-950/30 p-4 sm:p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm">
-              🧭
+      {/* Collapsible Model Matching & Routing Logic Banner */}
+      <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-gradient-to-r from-blue-50/60 via-indigo-50/40 to-purple-50/50 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-purple-950/30 px-3.5 py-2.5 transition-all shadow-xs">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap min-w-0 text-xs">
+            <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shrink-0">
+              <span>🧭</span>
+              <span>路由逻辑:</span>
             </span>
-            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-              网关模型匹配与请求路由逻辑
-            </h3>
+            <div className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 font-mono flex-wrap">
+              <span className="px-1.5 py-0.5 rounded bg-blue-100/70 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 font-medium">1. 请求 Model</span>
+              <span className="text-slate-400">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-indigo-100/70 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-300 font-medium">2. 别名优先 (Alias)</span>
+              <span className="text-slate-400">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-purple-100/70 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 font-medium">3. 原始 Model 直通</span>
+              <span className="text-slate-400">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-100/70 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-medium">4. 故障降级 (Fallback)</span>
+            </div>
           </div>
-          <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono hidden sm:inline">
-            别名优先 • 协议直通 • 故障秒级降级
-          </span>
+
+          <button
+            type="button"
+            onClick={toggleBanner}
+            className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center gap-1 shrink-0 px-2 py-1 rounded-md hover:bg-blue-100/50 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
+          >
+            <span>{showBanner ? "收起说明" : "查看说明"}</span>
+            <span className="text-[9px]">{showBanner ? "▲" : "▼"}</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-blue-100/80 dark:border-blue-900/40 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 font-semibold">
-              <span>1. 客户端请求 (Model)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono">
-                Step 1
-              </span>
+        {showBanner ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-2.5 pt-2.5 border-t border-blue-100/80 dark:border-blue-900/40 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-blue-100/80 dark:border-blue-900/40 shadow-xs space-y-0.5">
+              <div className="text-blue-600 dark:text-blue-400 font-semibold text-[11px]">1. 客户端请求 (Model)</div>
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                提取客户端 <code>model</code> 参数（如 <code>gpt-4o</code>、<code>claude</code> 或 <code>deepseek-v3</code>）。
+              </p>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-              识别客户端请求参数 <code>model</code>。支持传入官方标准模型名或您自定义的别名。
-            </p>
-          </div>
 
-          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400 font-semibold">
-              <span>2. 别名优先匹配 (Alias)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-mono">
-                Step 2
-              </span>
+            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs space-y-0.5">
+              <div className="text-indigo-600 dark:text-indigo-400 font-semibold text-[11px]">2. 别名优先匹配 (Alias)</div>
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                <strong>第一优先级</strong>：优先匹配 <strong>快捷别名</strong>，如将 <code>gpt4</code> 映射转发至 <code>gpt-4o-2024-11-20</code>。
+              </p>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-              <strong>第一优先级</strong>：优先匹配模型的 <strong>快捷别名 (Alias)</strong>。如将 <code>gpt4</code> 别名映射并转发至 <code>gpt-4o-2024-11-20</code>。
-            </p>
-          </div>
 
-          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-purple-100/80 dark:border-purple-900/40 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-purple-600 dark:text-purple-400 font-semibold">
-              <span>3. 原始模型名直通</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-mono">
-                Step 3
-              </span>
+            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-purple-100/80 dark:border-purple-900/40 shadow-xs space-y-0.5">
+              <div className="text-purple-600 dark:text-purple-400 font-semibold text-[11px]">3. 原始模型名直通</div>
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                <strong>第二优先级</strong>：若无别名则直连 <strong>上游模型名 (Model ID)</strong>，且要求模型与 Provider 均处于启用状态。
+              </p>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-              <strong>第二优先级</strong>：若无别名则匹配 <strong>上游模型名 (Model ID)</strong>，且要求当前模型与绑定 Provider 均处于<strong>启用</strong>状态。
-            </p>
-          </div>
 
-          <div className="p-3 bg-white/80 dark:bg-slate-900/70 rounded-xl border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 font-semibold">
-              <span>4. 故障自动降级 (Fallback)</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-mono">
-                Step 4
-              </span>
+            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-0.5">
+              <div className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">4. 故障自动降级 (Fallback)</div>
+              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                上游遇 <code>5xx/429/超时</code> 时，网关<strong>秒级自动重试配置的备用模型</strong>，业务零中断。
+              </p>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-              主上游出现 <code>5xx / 429 / 超时</code> 时，网关<strong>自动重试配置的备用模型</strong>，保障客户端业务无感切换。
-            </p>
           </div>
-        </div>
+        ) : null}
       </div>
 
       {!providers.length ? (
