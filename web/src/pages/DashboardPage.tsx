@@ -68,7 +68,7 @@ export default function DashboardPage() {
         <StatCard
           label="今日总请求"
           value={fmtNum(t.request_count)}
-          sub={`错误率 ${t.request_count ? ((t.error_count / t.request_count) * 100).toFixed(1) : 0}%`}
+          sub={t.cache_hit_count ? `缓存命中 ${t.cache_hit_count} 次` : `错误率 ${t.request_count ? ((t.error_count / t.request_count) * 100).toFixed(1) : 0}%`}
           tone="blue"
         />
         <StatCard
@@ -150,6 +150,11 @@ export default function DashboardPage() {
                     >
                       {u.status_code ?? "-"}
                     </Badge>
+                    {u.cache_hit ? (
+                      <Badge tone="purple" title="命中 KV 响应缓存">
+                        ⚡ HIT
+                      </Badge>
+                    ) : null}
                     <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[140px] sm:max-w-[200px]">
                       {u.model || "-"}
                     </span>

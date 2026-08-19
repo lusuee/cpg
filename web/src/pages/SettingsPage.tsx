@@ -9,6 +9,7 @@ interface SettingsData {
   gateway_base_url: string;
   provider_count: number;
   cf_access_configured?: boolean;
+  kv_cache_configured?: boolean;
   providers: Array<{
     id: string;
     name: string;
@@ -111,6 +112,14 @@ console.log(res.choices[0].message.content);`;
               <dd className="mt-0.5 flex items-center gap-1.5">
                 <Badge tone={data?.cf_access_configured ? "green" : "slate"} dot>
                   {data?.cf_access_configured ? "已配置邮箱白名单" : "未开启（密码登录）"}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-400 dark:text-slate-500 font-medium">KV 响应缓存加速</dt>
+              <dd className="mt-0.5 flex items-center gap-1.5">
+                <Badge tone={data?.kv_cache_configured ? "green" : "blue"} dot>
+                  {data?.kv_cache_configured ? "Cloudflare KV 已就绪" : "内存加速 / KV 可选绑定"}
                 </Badge>
               </dd>
             </div>

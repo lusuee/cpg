@@ -15,6 +15,13 @@ import {
   convertChatToResponsesJson,
   createChatToResponsesTransform,
 } from "./responses_adapter";
+import {
+  computeCacheKey,
+  shouldBypassCache,
+  getCachedEntry,
+  setCachedEntry,
+  createCachedResponse,
+} from "./cache";
 
 const DEFAULT_ENDPOINTS: Record<ProviderType, string> = {
   anthropic: "https://api.anthropic.com/v1",
@@ -38,6 +45,7 @@ interface ProxyContext {
   latencyMs: number;
   requestId: string;
   createdAt: number;
+  cacheKey?: string;
 }
 
 function buildTargetUrl(row: ModelWithProvider, kind: "messages" | "chat/completions" | "responses"): string {
@@ -64,6 +72,7 @@ async function record(
     model: ctx.row.model_name,
     usage,
     cost_usd: costUsd,
+    cache_hit: 0,
     status_code: statusCode,
     latency_ms: ctx.latencyMs,
     request_id: ctx.requestId,
@@ -79,15 +88,15 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   }
 
   const MAX_TAIL = 16 * 1024;
-  let tail = "";
+  let fullStreamText = "";
   let resolveDone: () => void = () => {};
   const donePromise = new Promise<void>((resolve) => { resolveDone = resolve; });
   const decoder = new TextDecoder();
 
   const transform = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
-      tail += decoder.decode(chunk, { stream: true });
-      if (tail.length > MAX_TAIL) tail = tail.slice(-MAX_TAIL);
+      const decoded = decoder.decode(chunk, { stream: true });
+      fullStreamText += decoded;
       controller.enqueue(chunk);
     },
     flush() {
@@ -102,8 +111,88 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   waitUntil(
     ctx.c,
     donePromise.then(async () => {
-      const usage = parseUsage(ctx.row.provider_type, tail);
+      const usage = parseUsage(ctx.row.provider_type, fullStreamText);
       await record(ctx, usage, upstreamRes.status);
+
+      // Asynchronously cache on 200 OK if cache is enabled
+      if (upstreamRes.ok && ctx.row.cache_enabled && ctx.cacheKey) {
+        try {
+          if (ctx.kind === "chat/completions") {
+            // Extract assistant text from SSE chunks
+            let extractedText = "";
+            const lines = fullStreamText.split(/\r?\n/);
+            for (const line of lines) {
+              if (line.startsWith("data: ") && !line.includes("[DONE]")) {
+                try {
+                  const chunkJson = JSON.parse(line.slice(6));
+                  const delta = chunkJson.choices?.[0]?.delta?.content;
+                  if (delta) extractedText += delta;
+                } catch {}
+              }
+            }
+            const jsonBody = {
+              id: `chatcmpl-${ctx.requestId}`,
+              object: "chat.completion",
+              created: Math.floor(ctx.createdAt / 1000),
+              model: ctx.row.model_name,
+              choices: [
+                {
+                  index: 0,
+                  message: { role: "assistant", content: extractedText },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            };
+            await setCachedEntry(
+              ctx.c.env,
+              ctx.cacheKey,
+              {
+                kind: ctx.kind,
+                model: ctx.row.model_name,
+                jsonBody,
+                usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+                createdAt: ctx.createdAt,
+              },
+              ctx.row.cache_ttl
+            );
+          } else if (ctx.kind === "messages") {
+            let extractedText = "";
+            const lines = fullStreamText.split(/\r?\n/);
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const eventJson = JSON.parse(line.slice(6));
+                  if (eventJson.type === "content_block_delta" && eventJson.delta?.text) {
+                    extractedText += eventJson.delta.text;
+                  }
+                } catch {}
+              }
+            }
+            const jsonBody = {
+              id: `msg_${ctx.requestId}`,
+              type: "message",
+              role: "assistant",
+              model: ctx.row.model_name,
+              content: [{ type: "text", text: extractedText }],
+              stop_reason: "end_turn",
+              usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            };
+            await setCachedEntry(
+              ctx.c.env,
+              ctx.cacheKey,
+              {
+                kind: ctx.kind,
+                model: ctx.row.model_name,
+                jsonBody,
+                usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+                createdAt: ctx.createdAt,
+              },
+              ctx.row.cache_ttl
+            );
+          }
+        } catch {}
+      }
     })
   );
   return res;
@@ -115,7 +204,8 @@ async function executeProxyAttempt(
   device: DeviceRow,
   row: ModelWithProvider,
   body: any,
-  requestId: string
+  requestId: string,
+  cacheKey?: string
 ): Promise<Response | null> {
   const secretName = row.provider_secret_name;
   if (!secretName) return null;
@@ -160,6 +250,7 @@ async function executeProxyAttempt(
       latencyMs: Date.now() - startedAt,
       requestId,
       createdAt: startedAt,
+      cacheKey,
     };
 
     if (upstreamRes.ok) {
@@ -183,15 +274,43 @@ async function executeProxyAttempt(
           donePromise.then(async () => {
             pctx.latencyMs = Date.now() - startedAt;
             const approxOutputTokens = Math.max(1, Math.ceil(fullOutput.length / 4));
-            await record(
-              pctx,
-              {
-                input_tokens: approxInputTokens,
-                output_tokens: approxOutputTokens,
-                total_tokens: approxInputTokens + approxOutputTokens,
-              },
-              upstreamRes.status
-            );
+            const usageObj = {
+              input_tokens: approxInputTokens,
+              output_tokens: approxOutputTokens,
+              total_tokens: approxInputTokens + approxOutputTokens,
+            };
+            await record(pctx, usageObj, upstreamRes.status);
+
+            if (row.cache_enabled && cacheKey) {
+              const respJson = {
+                id: `resp_${requestId}`,
+                object: "response",
+                status: "completed",
+                model: row.model_name,
+                output: [
+                  {
+                    id: `item_${requestId}`,
+                    type: "message",
+                    role: "assistant",
+                    status: "completed",
+                    content: [{ type: "text", text: fullOutput }],
+                  },
+                ],
+                usage: usageObj,
+              };
+              await setCachedEntry(
+                c.env,
+                cacheKey,
+                {
+                  kind,
+                  model: row.model_name,
+                  jsonBody: respJson,
+                  usage: usageObj,
+                  createdAt: startedAt,
+                },
+                row.cache_ttl
+              );
+            }
           })
         );
 
@@ -205,7 +324,25 @@ async function executeProxyAttempt(
           output_tokens: Math.max(1, Math.ceil((responsesJson.output?.[0]?.content?.[0]?.text || "").length / 4)),
           total_tokens: approxInputTokens + Math.max(1, Math.ceil((responsesJson.output?.[0]?.content?.[0]?.text || "").length / 4)),
         };
-        waitUntil(c, record(pctx, usage, upstreamRes.status));
+        waitUntil(
+          c,
+          record(pctx, usage, upstreamRes.status).then(async () => {
+            if (row.cache_enabled && cacheKey) {
+              await setCachedEntry(
+                c.env,
+                cacheKey,
+                {
+                  kind,
+                  model: row.model_name,
+                  jsonBody: responsesJson,
+                  usage,
+                  createdAt: startedAt,
+                },
+                row.cache_ttl
+              );
+            }
+          })
+        );
         return c.json(responsesJson, 200);
       }
     }
@@ -250,6 +387,7 @@ async function executeProxyAttempt(
     latencyMs: Date.now() - startedAt,
     requestId,
     createdAt: startedAt,
+    cacheKey,
   };
 
   if (isStream) return passthroughStream(pctx, upstreamRes);
@@ -261,7 +399,29 @@ async function executeProxyAttempt(
     status: upstreamRes.status,
     headers: cleanResponseHeaders(upstreamRes.headers),
   });
-  waitUntil(pctx.c, record(pctx, usage, upstreamRes.status));
+
+  waitUntil(
+    pctx.c,
+    record(pctx, usage, upstreamRes.status).then(async () => {
+      if (upstreamRes.ok && row.cache_enabled && cacheKey) {
+        try {
+          const jsonBody = JSON.parse(text);
+          await setCachedEntry(
+            c.env,
+            cacheKey,
+            {
+              kind,
+              model: row.model_name,
+              jsonBody,
+              usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+              createdAt: startedAt,
+            },
+            row.cache_ttl
+          );
+        } catch {}
+      }
+    })
+  );
   return res;
 }
 
@@ -301,15 +461,51 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   }
 
   const requestId = randomRequestId();
+  const isStream = body?.stream === true;
+  const bypass = shouldBypassCache(c.req.raw.headers, body);
+  const cacheEnabled = Boolean(row.cache_enabled);
+
+  let cacheKey: string | undefined;
+  if (cacheEnabled) {
+    cacheKey = await computeCacheKey(kind, row.model_name, body);
+
+    if (!bypass) {
+      const cached = await getCachedEntry(c.env, cacheKey);
+      if (cached) {
+        const cacheStartedAt = Date.now();
+        const cachedRes = createCachedResponse(cached, kind, isStream, row.model_name, requestId);
+        waitUntil(
+          c,
+          recordUsageSafe(c.env, {
+            device_id: device.id,
+            provider_id: row.provider_id,
+            provider_name: row.provider_name,
+            model: row.model_name,
+            usage: cached.usage,
+            cost_usd: 0,
+            cache_hit: 1,
+            status_code: 200,
+            latency_ms: Date.now() - cacheStartedAt,
+            request_id: requestId,
+            created_at: cacheStartedAt,
+          })
+        );
+        return cachedRes;
+      }
+    }
+  }
 
   // Primary attempt
-  let response = await executeProxyAttempt(c, kind, device, row, body, requestId);
+  let response = await executeProxyAttempt(c, kind, device, row, body, requestId, cacheKey);
 
   // If primary attempt failed and fallback_model_id is configured, attempt fallback
   if (!response && row.fallback_model_id) {
     const fallbackRow = await getModelWithProviderById(c.env, row.fallback_model_id);
     if (fallbackRow) {
-      response = await executeProxyAttempt(c, kind, device, fallbackRow, body, requestId);
+      const fallbackCacheKey = fallbackRow.cache_enabled
+        ? await computeCacheKey(kind, fallbackRow.model_name, body)
+        : undefined;
+      response = await executeProxyAttempt(c, kind, device, fallbackRow, body, requestId, fallbackCacheKey);
     }
   }
 

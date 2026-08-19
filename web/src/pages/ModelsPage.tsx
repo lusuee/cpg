@@ -14,6 +14,8 @@ interface FormState {
   fallback_model_id: string;
   input_price_per_m: string;
   output_price_per_m: string;
+  cache_enabled: boolean;
+  cache_ttl: string;
   enabled: boolean;
   config_json: string;
 }
@@ -52,6 +54,8 @@ export default function ModelsPage() {
     fallback_model_id: "",
     input_price_per_m: "",
     output_price_per_m: "",
+    cache_enabled: false,
+    cache_ttl: "3600",
     enabled: true,
     config_json: "",
   });
@@ -83,6 +87,8 @@ export default function ModelsPage() {
       fallback_model_id: "",
       input_price_per_m: "",
       output_price_per_m: "",
+      cache_enabled: false,
+      cache_ttl: "3600",
       enabled: true,
       config_json: "",
     });
@@ -100,6 +106,8 @@ export default function ModelsPage() {
       fallback_model_id: m.fallback_model_id || "",
       input_price_per_m: m.input_price_per_m ? String(m.input_price_per_m) : "",
       output_price_per_m: m.output_price_per_m ? String(m.output_price_per_m) : "",
+      cache_enabled: Boolean(m.cache_enabled),
+      cache_ttl: m.cache_ttl ? String(m.cache_ttl) : "3600",
       enabled: Boolean(m.enabled),
       config_json: m.config_json || "",
     });
@@ -426,6 +434,7 @@ export default function ModelsPage() {
                 <th className="pb-3 px-2">绑定 Provider</th>
                 <th className="pb-3 px-2">1M 定价 (入/出)</th>
                 <th className="pb-3 px-2">故障备用</th>
+                <th className="pb-3 px-2">KV 缓存</th>
                 <th className="pb-3 px-2">状态</th>
                 <th className="pb-3 px-2 text-right">操作</th>
               </tr>
@@ -471,6 +480,15 @@ export default function ModelsPage() {
                         </Badge>
                       ) : (
                         <span className="text-slate-400 dark:text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-2">
+                      {m.cache_enabled ? (
+                        <Badge tone="purple" title={`响应缓存已开启，过期时间 ${m.cache_ttl || 3600} 秒`}>
+                          ⚡ {m.cache_ttl || 3600}s
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500 text-xs">-</span>
                       )}
                     </td>
                     <td className="py-3 px-2">
@@ -726,6 +744,42 @@ export default function ModelsPage() {
             </div>
           </div>
 
+          {/* KV Cache Settings Box */}
+          <div className="p-3.5 bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label htmlFor="model-cache-enabled" className="text-xs font-semibold text-purple-900 dark:text-purple-300 cursor-pointer select-none flex items-center gap-1.5">
+                  <span>⚡ 启用响应缓存 (Cloudflare KV Cache)</span>
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  对相同 Prompt 和参数的请求自动边缘命中并毫秒级返回，节省 API 调用费用
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                id="model-cache-enabled"
+                className="rounded border-slate-300 dark:border-slate-700 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                checked={form.cache_enabled}
+                onChange={(e) => setForm({ ...form, cache_enabled: e.target.checked })}
+              />
+            </div>
+            {form.cache_enabled ? (
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  缓存过期时间 TTL (秒) <span className="text-slate-400 dark:text-slate-500 font-normal">（最低 60 秒，默认 3600 秒 / 1 小时）</span>
+                </label>
+                <Input
+                  type="number"
+                  min="60"
+                  max="2592000"
+                  placeholder="3600"
+                  value={form.cache_ttl}
+                  onChange={(e) => setForm({ ...form, cache_ttl: e.target.value })}
+                />
+              </div>
+            ) : null}
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               高级 JSON 覆盖配置 <span className="text-slate-400 dark:text-slate-500 font-normal">（可选）</span>
@@ -851,6 +905,8 @@ function serialize(f: FormState) {
     fallback_model_id: f.fallback_model_id ? f.fallback_model_id.trim() : null,
     input_price_per_m: f.input_price_per_m ? parseFloat(f.input_price_per_m) || 0 : 0,
     output_price_per_m: f.output_price_per_m ? parseFloat(f.output_price_per_m) || 0 : 0,
+    cache_enabled: f.cache_enabled,
+    cache_ttl: parseInt(f.cache_ttl, 10) || 3600,
     enabled: f.enabled,
     config_json: f.config_json?.trim() || null,
   };

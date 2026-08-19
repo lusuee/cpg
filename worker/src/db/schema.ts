@@ -21,6 +21,8 @@ export const INIT_STATEMENTS = [
     fallback_model_id TEXT,
     input_price_per_m REAL NOT NULL DEFAULT 0,
     output_price_per_m REAL NOT NULL DEFAULT 0,
+    cache_enabled INTEGER NOT NULL DEFAULT 0,
+    cache_ttl INTEGER NOT NULL DEFAULT 3600,
     enabled INTEGER NOT NULL DEFAULT 1,
     config_json TEXT,
     created_at INTEGER,
@@ -46,6 +48,7 @@ export const INIT_STATEMENTS = [
     output_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0,
+    cache_hit INTEGER NOT NULL DEFAULT 0,
     status_code INTEGER,
     latency_ms INTEGER,
     request_id TEXT,
@@ -70,6 +73,8 @@ export const INIT_STATEMENTS = [
     output_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0,
+    cache_hit_count INTEGER NOT NULL DEFAULT 0,
+    cost_saved_usd REAL NOT NULL DEFAULT 0,
     avg_latency_ms REAL NOT NULL DEFAULT 0,
     error_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (date, device_id, provider_id, model)
@@ -81,8 +86,13 @@ const MIGRATION_ALTERS = [
   "ALTER TABLE models ADD COLUMN fallback_model_id TEXT",
   "ALTER TABLE models ADD COLUMN input_price_per_m REAL NOT NULL DEFAULT 0",
   "ALTER TABLE models ADD COLUMN output_price_per_m REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE models ADD COLUMN cache_enabled INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE models ADD COLUMN cache_ttl INTEGER NOT NULL DEFAULT 3600",
   "ALTER TABLE devices ADD COLUMN rate_limit_rpm INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE usage ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE usage ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE daily_stats ADD COLUMN cache_hit_count INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE daily_stats ADD COLUMN cost_saved_usd REAL NOT NULL DEFAULT 0",
 ];
 
 let schemaInitialized = false;

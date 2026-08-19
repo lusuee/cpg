@@ -18,6 +18,7 @@ settingsApp.get("/", async (c) => {
     gateway_base_url,
     provider_count: providers.length,
     cf_access_configured: Boolean(c.env.CF_ACCESS_ALLOWED_EMAILS),
+    kv_cache_configured: Boolean(c.env.CACHE_KV),
     providers: providers.map((p) => ({
       id: p.id,
       name: p.name,

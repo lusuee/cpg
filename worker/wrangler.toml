@@ -23,3 +23,8 @@ APP_NAME = "Personal AI Gateway"
 [triggers]
 crons = ["0 1 * * *"]
 
+# Optional Cloudflare KV response caching namespace
+# [[kv_namespaces]]
+# binding = "CACHE_KV"
+# id = "00000000-0000-0000-0000-000000000000"
+

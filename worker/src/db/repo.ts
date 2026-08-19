@@ -114,6 +114,8 @@ export async function createModel(
     fallback_model_id?: string | null;
     input_price_per_m?: number;
     output_price_per_m?: number;
+    cache_enabled?: boolean;
+    cache_ttl?: number;
     enabled?: boolean;
     config_json?: string;
   }
@@ -129,14 +131,16 @@ export async function createModel(
     fallback_model_id: data.fallback_model_id || null,
     input_price_per_m: typeof data.input_price_per_m === "number" ? data.input_price_per_m : 0,
     output_price_per_m: typeof data.output_price_per_m === "number" ? data.output_price_per_m : 0,
+    cache_enabled: data.cache_enabled ? 1 : 0,
+    cache_ttl: typeof data.cache_ttl === "number" && data.cache_ttl >= 60 ? data.cache_ttl : 3600,
     enabled: data.enabled === false ? 0 : 1,
     config_json: data.config_json || null,
     created_at: t,
     updated_at: t,
   };
   await env.DB.prepare(
-    "INSERT INTO models (id, provider_id, model_name, display_name, alias, fallback_model_id, input_price_per_m, output_price_per_m, enabled, config_json, created_at, updated_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO models (id, provider_id, model_name, display_name, alias, fallback_model_id, input_price_per_m, output_price_per_m, cache_enabled, cache_ttl, enabled, config_json, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       row.id,
@@ -147,6 +151,8 @@ export async function createModel(
       row.fallback_model_id,
       row.input_price_per_m,
       row.output_price_per_m,
+      row.cache_enabled,
+      row.cache_ttl,
       row.enabled,
       row.config_json,
       row.created_at,
@@ -167,6 +173,8 @@ export async function updateModel(
     fallback_model_id?: string | null;
     input_price_per_m?: number;
     output_price_per_m?: number;
+    cache_enabled?: boolean;
+    cache_ttl?: number;
     enabled?: boolean;
     config_json?: string | null;
   }
@@ -182,12 +190,14 @@ export async function updateModel(
     fallback_model_id: data.fallback_model_id !== undefined ? data.fallback_model_id : (existing.fallback_model_id || null),
     input_price_per_m: typeof data.input_price_per_m === "number" ? data.input_price_per_m : (existing.input_price_per_m || 0),
     output_price_per_m: typeof data.output_price_per_m === "number" ? data.output_price_per_m : (existing.output_price_per_m || 0),
+    cache_enabled: data.cache_enabled !== undefined ? (data.cache_enabled ? 1 : 0) : (existing.cache_enabled || 0),
+    cache_ttl: typeof data.cache_ttl === "number" && data.cache_ttl >= 60 ? data.cache_ttl : (existing.cache_ttl || 3600),
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     config_json: data.config_json !== undefined ? data.config_json : existing.config_json,
     updated_at: now(),
   };
   await env.DB.prepare(
-    "UPDATE models SET provider_id = ?, model_name = ?, display_name = ?, alias = ?, fallback_model_id = ?, input_price_per_m = ?, output_price_per_m = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
+    "UPDATE models SET provider_id = ?, model_name = ?, display_name = ?, alias = ?, fallback_model_id = ?, input_price_per_m = ?, output_price_per_m = ?, cache_enabled = ?, cache_ttl = ?, enabled = ?, config_json = ?, updated_at = ? WHERE id = ?"
   )
     .bind(
       next.provider_id,
@@ -197,6 +207,8 @@ export async function updateModel(
       next.fallback_model_id,
       next.input_price_per_m,
       next.output_price_per_m,
+      next.cache_enabled,
+      next.cache_ttl,
       next.enabled,
       next.config_json,
       next.updated_at,
@@ -316,6 +328,7 @@ export async function insertUsage(
     model: string | null;
     usage: TokenUsage | null;
     cost_usd?: number;
+    cache_hit?: number;
     status_code: number | null;
     latency_ms: number | null;
     request_id: string;
@@ -324,9 +337,10 @@ export async function insertUsage(
 ) {
   const { input_tokens, output_tokens, total_tokens } = data.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
   const cost = typeof data.cost_usd === "number" ? data.cost_usd : 0;
+  const cacheHit = data.cache_hit ? 1 : 0;
   await env.DB.prepare(
-    "INSERT INTO usage (device_id, provider_id, provider_name, model, input_tokens, output_tokens, total_tokens, cost_usd, status_code, latency_ms, request_id, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO usage (device_id, provider_id, provider_name, model, input_tokens, output_tokens, total_tokens, cost_usd, cache_hit, status_code, latency_ms, request_id, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       data.device_id,
@@ -337,6 +351,7 @@ export async function insertUsage(
       output_tokens,
       total_tokens,
       cost,
+      cacheHit,
       data.status_code,
       data.latency_ms,
       data.request_id,
@@ -375,6 +390,7 @@ export async function statsSummary(env: Env, since: number) {
       "COALESCE(SUM(output_tokens), 0) as output_tokens, " +
       "COALESCE(SUM(total_tokens), 0) as total_tokens, " +
       "COALESCE(SUM(cost_usd), 0) as cost_usd, " +
+      "COALESCE(SUM(cache_hit), 0) as cache_hit_count, " +
       "COALESCE(AVG(latency_ms), 0) as avg_latency_ms, " +
       "COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count " +
       "FROM usage WHERE created_at >= ?"
@@ -426,7 +442,7 @@ export async function aggregateDailyStats(env: Env, targetDate?: string): Promis
     : "created_at >= " + (Date.now() - 2 * 24 * 60 * 60 * 1000);
 
   const sql = `
-    INSERT OR REPLACE INTO daily_stats (date, device_id, provider_id, model, request_count, input_tokens, output_tokens, total_tokens, cost_usd, avg_latency_ms, error_count)
+    INSERT OR REPLACE INTO daily_stats (date, device_id, provider_id, model, request_count, input_tokens, output_tokens, total_tokens, cost_usd, cache_hit_count, cost_saved_usd, avg_latency_ms, error_count)
     SELECT 
       strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch')) as date,
       device_id,
@@ -437,6 +453,8 @@ export async function aggregateDailyStats(env: Env, targetDate?: string): Promis
       COALESCE(SUM(output_tokens), 0) as output_tokens,
       COALESCE(SUM(total_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
+      COALESCE(SUM(cache_hit), 0) as cache_hit_count,
+      0 as cost_saved_usd,
       COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
       COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count
     FROM usage

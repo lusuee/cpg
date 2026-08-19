@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, fmtNum, fmtTime } from "../api/client";
 import type { Provider, UsageItem } from "../types";
 import { Badge, Button, Card, Empty, Input, Select, Spinner, CopyButton } from "../components/ui";
-import { IconUsage, IconSearch, IconRefresh } from "../components/icons";
+import { IconUsage, IconSearch, IconRefresh, IconDownload, IconZap } from "../components/icons";
 import { useQuery, getCacheData, setCacheData } from "../hooks/useQuery";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -21,6 +21,7 @@ export default function UsagePage() {
   const [items, setItems] = useState<UsageItem[]>(() => getCacheData("usage-page-items") || []);
   const [loading, setLoading] = useState(() => !getCacheData("usage-page-items"));
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,6 +55,26 @@ export default function UsagePage() {
       setLoading(false);
     }
   }, [buildQuery]);
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const q = new URLSearchParams();
+      q.set("limit", "10000");
+      if (range !== "all") {
+        const span = range === "7d" ? 7 * DAY_MS : range === "30d" ? 30 * DAY_MS : DAY_MS;
+        q.set("from", String(Date.now() - span));
+      }
+      if (providerId) q.set("provider_id", providerId);
+      if (model.trim()) q.set("model", model.trim());
+
+      await api.download(`/api/usage/export?${q.toString()}`, `usage-export-${range}.csv`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "导出 CSV 失败");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -91,10 +112,16 @@ export default function UsagePage() {
             实时记录每次网关透传请求、消耗的 Token 数、网络延迟与上游响应状态
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refresh()}>
-          <IconRefresh />
-          <span>刷新记录</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exporting}>
+            <IconDownload />
+            <span>{exporting ? "正在导出…" : "导出 CSV"}</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refresh()}>
+            <IconRefresh />
+            <span>刷新记录</span>
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -147,7 +174,7 @@ export default function UsagePage() {
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                     <th className="pb-3 px-2">请求时间</th>
-                    <th className="pb-3 px-2">状态码</th>
+                    <th className="pb-3 px-2">状态 / 缓存</th>
                     <th className="pb-3 px-2">模型</th>
                     <th className="pb-3 px-2">Provider</th>
                     <th className="pb-3 px-2">设备来源</th>
@@ -164,18 +191,25 @@ export default function UsagePage() {
                     <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="py-3 px-2 text-slate-500 dark:text-slate-400 whitespace-nowrap text-xs">{fmtTime(u.created_at)}</td>
                       <td className="py-3 px-2">
-                        <Badge
-                          tone={
-                            u.status_code && u.status_code >= 500
-                              ? "red"
-                              : u.status_code && u.status_code >= 400
-                              ? "amber"
-                              : "green"
-                          }
-                          dot
-                        >
-                          {u.status_code ?? "-"}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge
+                            tone={
+                              u.status_code && u.status_code >= 500
+                                ? "red"
+                                : u.status_code && u.status_code >= 400
+                                ? "amber"
+                                : "green"
+                            }
+                            dot
+                          >
+                            {u.status_code ?? "-"}
+                          </Badge>
+                          {u.cache_hit ? (
+                            <Badge tone="purple" title="该请求命中 Cloudflare KV 响应缓存">
+                              ⚡ HIT
+                            </Badge>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100">{u.model || "-"}</td>
                       <td className="py-3 px-2 text-slate-600 dark:text-slate-400">{u.provider_name || "-"}</td>
@@ -187,14 +221,24 @@ export default function UsagePage() {
                       <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 text-xs">
                         {fmtNum(u.total_tokens)}
                       </td>
-                      <td className="py-3 px-2 text-right font-mono text-xs text-purple-600 dark:text-purple-400 font-medium">
-                        {u.cost_usd ? `$${u.cost_usd.toFixed(4)}` : "$0.0000"}
+                      <td className="py-3 px-2 text-right font-mono text-xs font-medium">
+                        {u.cache_hit ? (
+                          <span className="text-emerald-600 dark:text-emerald-400" title="命中缓存，无需向上游计费">
+                            $0.0000
+                          </span>
+                        ) : u.cost_usd ? (
+                          <span className="text-purple-600 dark:text-purple-400">${u.cost_usd.toFixed(4)}</span>
+                        ) : (
+                          <span className="text-slate-500 dark:text-slate-400">$0.0000</span>
+                        )}
                       </td>
                       <td className="py-3 px-2 text-right text-xs">
                         {u.latency_ms != null ? (
                           <span
                             className={`font-mono ${
-                              u.latency_ms > 5000
+                              u.cache_hit
+                                ? "text-purple-600 dark:text-purple-400 font-semibold"
+                                : u.latency_ms > 5000
                                 ? "text-amber-600 dark:text-amber-400"
                                 : u.latency_ms > 15000
                                 ? "text-rose-600 dark:text-rose-400"
