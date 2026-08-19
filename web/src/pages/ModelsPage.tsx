@@ -2,7 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -48,6 +48,10 @@ export default function ModelsPage() {
     enabled: true,
     config_json: "",
   });
+
+  // Table batch selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchOperating, setBatchOperating] = useState(false);
 
   // Sync / Auto-fetch modal state
   const [showSync, setShowSync] = useState(false);
@@ -102,7 +106,6 @@ export default function ModelsPage() {
     try {
       const res = await api.post<{ models: string[] }>(`/api/providers/${provId}/fetch-models`);
       setFetchedModels(res.models || []);
-      // Pre-select models not already in items
       const existingNames = new Set(items.filter((m) => m.provider_id === provId).map((m) => m.model_name));
       const nextSelected = new Set<string>();
       for (const m of res.models || []) {
@@ -158,10 +161,62 @@ export default function ModelsPage() {
     if (!confirm(`确认删除模型「${m.model_name}」？`)) return;
     try {
       await api.del(`/api/models/${m.id}`);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(m.id);
+        return next;
+      });
       invalidateCache("dashboard-");
       await refresh();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "删除失败");
+    }
+  }
+
+  async function onToggleSingle(m: ModelItem) {
+    try {
+      await api.put(`/api/models/${m.id}`, { enabled: !m.enabled });
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "操作失败");
+    }
+  }
+
+  // Batch actions
+  async function handleBatchEnable(enabled: boolean) {
+    if (!selectedIds.size) return;
+    setBatchOperating(true);
+    try {
+      await api.post("/api/models/batch-update", {
+        ids: Array.from(selectedIds),
+        enabled,
+      });
+      setSelectedIds(new Set());
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "批量更新失败");
+    } finally {
+      setBatchOperating(false);
+    }
+  }
+
+  async function handleBatchDelete() {
+    if (!selectedIds.size) return;
+    if (!confirm(`确定要永久删除选中的 ${selectedIds.size} 个模型吗？此操作无法撤销。`)) return;
+    setBatchOperating(true);
+    try {
+      await api.post("/api/models/batch-delete", {
+        ids: Array.from(selectedIds),
+      });
+      setSelectedIds(new Set());
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "批量删除失败");
+    } finally {
+      setBatchOperating(false);
     }
   }
 
@@ -177,6 +232,26 @@ export default function ModelsPage() {
   const filteredSyncModels = fetchedModels.filter((m) =>
     m.toLowerCase().includes(syncFilter.toLowerCase())
   );
+
+  const isAllFilteredSelected =
+    filteredItems.length > 0 && filteredItems.every((m) => selectedIds.has(m.id));
+
+  const toggleSelectAll = () => {
+    if (isAllFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map((m) => m.id)));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -205,8 +280,8 @@ export default function ModelsPage() {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-3 max-w-sm">
-        <div className="relative w-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative w-full max-w-sm">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
             <IconSearch />
           </div>
@@ -217,6 +292,49 @@ export default function ModelsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
+        {/* Floating / Inline Batch Operations Toolbar */}
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+            <span className="font-semibold text-blue-900">已选中 {selectedIds.size} 项</span>
+            <div className="h-4 w-px bg-blue-200 mx-1" />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={() => handleBatchEnable(true)}
+              className="bg-white text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 border-emerald-300 shadow-none"
+            >
+              <IconCheck />
+              <span>批量启用</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={() => handleBatchEnable(false)}
+              className="bg-white text-slate-700 hover:bg-slate-100 shadow-none"
+            >
+              <span>批量停用</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={batchOperating}
+              onClick={handleBatchDelete}
+              className="bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200 shadow-none"
+            >
+              <IconTrash />
+              <span>批量删除</span>
+            </Button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-1 text-slate-400 hover:text-slate-600 text-xs font-medium cursor-pointer"
+            >
+              取消
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <Card className="overflow-x-auto">
@@ -224,6 +342,14 @@ export default function ModelsPage() {
           <table className="w-full text-left text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-400 font-medium">
+                <th className="pb-3 px-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={isAllFilteredSelected}
+                    onChange={toggleSelectAll}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                  />
+                </th>
                 <th className="pb-3 px-2">上游模型名</th>
                 <th className="pb-3 px-2">显示名称</th>
                 <th className="pb-3 px-2">客户端别名</th>
@@ -233,40 +359,65 @@ export default function ModelsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-3 px-2 font-mono font-medium text-slate-900">{m.model_name}</td>
-                  <td className="py-3 px-2 text-slate-700">{m.display_name || "-"}</td>
-                  <td className="py-3 px-2">
-                    {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400">-</span>}
-                  </td>
-                  <td className="py-3 px-2 text-slate-600 font-medium">
-                    {m.provider_name || <span className="font-mono text-xs text-slate-400">{m.provider_id}</span>}
-                  </td>
-                  <td className="py-3 px-2">
-                    <Badge tone={m.enabled ? "green" : "slate"} dot>
-                      {m.enabled ? "启用" : "已停用"}
-                    </Badge>
-                  </td>
-                  <td className="py-3 px-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(m)}>
-                        <IconEdit />
-                        <span>编辑</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                        onClick={() => onDelete(m)}
+              {filteredItems.map((m) => {
+                const isSelected = selectedIds.has(m.id);
+                return (
+                  <tr
+                    key={m.id}
+                    className={`transition-colors ${isSelected ? "bg-blue-50/50" : "hover:bg-slate-50/60"}`}
+                  >
+                    <td className="py-3 px-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectRow(m.id)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                      />
+                    </td>
+                    <td className="py-3 px-2 font-mono font-medium text-slate-900">{m.model_name}</td>
+                    <td className="py-3 px-2 text-slate-700">{m.display_name || "-"}</td>
+                    <td className="py-3 px-2">
+                      {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400">-</span>}
+                    </td>
+                    <td className="py-3 px-2 text-slate-600 font-medium">
+                      {m.provider_name || <span className="font-mono text-xs text-slate-400">{m.provider_id}</span>}
+                    </td>
+                    <td className="py-3 px-2">
+                      <button
+                        type="button"
+                        onClick={() => onToggleSingle(m)}
+                        title="点击快速切换启用/停用状态"
+                        className="cursor-pointer group"
                       >
-                        <IconTrash />
-                        <span>删除</span>
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <Badge
+                          tone={m.enabled ? "green" : "slate"}
+                          dot
+                          className="group-hover:opacity-80 transition-opacity"
+                        >
+                          {m.enabled ? "启用" : "已停用"}
+                        </Badge>
+                      </button>
+                    </td>
+                    <td className="py-3 px-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(m)}>
+                          <IconEdit />
+                          <span>编辑</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                          onClick={() => onDelete(m)}
+                        >
+                          <IconTrash />
+                          <span>删除</span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (

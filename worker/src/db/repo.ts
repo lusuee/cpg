@@ -161,6 +161,26 @@ export async function deleteModel(env: Env, id: string): Promise<boolean> {
   return res.meta.changes > 0;
 }
 
+export async function batchUpdateModels(env: Env, ids: string[], data: { enabled?: boolean }): Promise<number> {
+  if (!ids.length) return 0;
+  await ensureSchema(env);
+  const placeholders = ids.map(() => "?").join(",");
+  const res = await env.DB.prepare(
+    `UPDATE models SET enabled = ?, updated_at = ? WHERE id IN (${placeholders})`
+  ).bind(data.enabled ? 1 : 0, now(), ...ids).run();
+  return res.meta.changes;
+}
+
+export async function batchDeleteModels(env: Env, ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
+  await ensureSchema(env);
+  const placeholders = ids.map(() => "?").join(",");
+  const res = await env.DB.prepare(
+    `DELETE FROM models WHERE id IN (${placeholders})`
+  ).bind(...ids).run();
+  return res.meta.changes;
+}
+
 export async function findModelAndProvider(env: Env, modelKey: string): Promise<ModelWithProvider | null> {
   return (await env.DB.prepare(
     "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +

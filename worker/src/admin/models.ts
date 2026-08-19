@@ -1,6 +1,14 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { createModel, deleteModel, listModels, updateModel, getProvider } from "../db/repo";
+import {
+  createModel,
+  deleteModel,
+  listModels,
+  updateModel,
+  getProvider,
+  batchUpdateModels,
+  batchDeleteModels,
+} from "../db/repo";
 
 export const modelsApp = new Hono<{ Bindings: Env }>();
 
@@ -50,6 +58,23 @@ modelsApp.post("/batch", async (c) => {
     created.push(row);
   }
   return c.json({ created: created.length, items: created }, 201);
+});
+
+modelsApp.post("/batch-update", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = body.ids;
+  if (!Array.isArray(ids) || !ids.length) return c.json({ error: "ids array is required" }, 400);
+  const enabled = typeof body.enabled === "boolean" ? body.enabled : undefined;
+  const count = await batchUpdateModels(c.env, ids, { enabled });
+  return c.json({ updated: count });
+});
+
+modelsApp.post("/batch-delete", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = body.ids;
+  if (!Array.isArray(ids) || !ids.length) return c.json({ error: "ids array is required" }, 400);
+  const count = await batchDeleteModels(c.env, ids);
+  return c.json({ deleted: count });
 });
 
 modelsApp.put("/:id", async (c) => {
