@@ -84,6 +84,36 @@ export async function deleteProvider(env: Env, id: string): Promise<boolean> {
   return true;
 }
 
+export async function batchUpdateProviders(env: Env, ids: string[], data: { enabled?: boolean }): Promise<number> {
+  if (!ids.length) return 0;
+  await ensureSchema(env);
+  const sets: string[] = ["updated_at = ?"];
+  const binds: any[] = [now()];
+
+  if (data.enabled !== undefined) {
+    sets.push("enabled = ?");
+    binds.push(data.enabled ? 1 : 0);
+  }
+
+  const placeholders = ids.map(() => "?").join(",");
+  const sql = `UPDATE providers SET ${sets.join(", ")} WHERE id IN (${placeholders})`;
+  const res = await env.DB.prepare(sql).bind(...binds, ...ids).run();
+  return res.meta.changes;
+}
+
+export async function batchDeleteProviders(env: Env, ids: string[]): Promise<{ deleted: number; skipped: number }> {
+  if (!ids.length) return { deleted: 0, skipped: 0 };
+  await ensureSchema(env);
+  let deleted = 0;
+  let skipped = 0;
+  for (const id of ids) {
+    const ok = await deleteProvider(env, id);
+    if (ok) deleted++;
+    else skipped++;
+  }
+  return { deleted, skipped };
+}
+
 // ---------- Models ----------
 
 export async function listModels(env: Env) {

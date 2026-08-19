@@ -1,8 +1,22 @@
 import { Hono } from "hono";
 import type { Env, ProviderRow } from "../types";
-import { createProvider, deleteProvider, listProviders, updateProvider, getProvider } from "../db/repo";
+import {
+  createProvider,
+  deleteProvider,
+  listProviders,
+  updateProvider,
+  getProvider,
+  batchUpdateProviders,
+  batchDeleteProviders,
+} from "../db/repo";
 
-import { CreateProviderSchema, UpdateProviderSchema, zValidator } from "./schemas";
+import {
+  CreateProviderSchema,
+  UpdateProviderSchema,
+  BatchUpdateProvidersSchema,
+  BatchDeleteProvidersSchema,
+  zValidator,
+} from "./schemas";
 
 export const providersApp = new Hono<{ Bindings: Env }>();
 
@@ -64,6 +78,18 @@ providersApp.put("/:id", zValidator("json", UpdateProviderSchema), async (c) => 
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: publicProvider(row, c.env) });
+});
+
+providersApp.post("/batch-update", zValidator("json", BatchUpdateProvidersSchema), async (c) => {
+  const data = c.req.valid("json");
+  const count = await batchUpdateProviders(c.env, data.ids, { enabled: data.enabled });
+  return c.json({ updated: count });
+});
+
+providersApp.post("/batch-delete", zValidator("json", BatchDeleteProvidersSchema), async (c) => {
+  const data = c.req.valid("json");
+  const res = await batchDeleteProviders(c.env, data.ids);
+  return c.json(res);
 });
 
 providersApp.delete("/:id", async (c) => {

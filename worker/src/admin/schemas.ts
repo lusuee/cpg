@@ -51,6 +51,15 @@ export const UpdateProviderSchema = z.object({
   config_json: z.string().nullable().optional(),
 });
 
+export const BatchUpdateProvidersSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "ids 列表不能为空"),
+  enabled: z.boolean().optional(),
+});
+
+export const BatchDeleteProvidersSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "ids 列表不能为空"),
+});
+
 // Model Schemas
 export const CreateModelSchema = z.object({
   provider_id: z.string().min(1, "provider_id 不能为空"),
