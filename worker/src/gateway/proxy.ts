@@ -138,6 +138,13 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   if (kind === "responses") {
     const target = buildTargetUrl(row, "chat/completions");
     const chatBody = convertResponsesRequest(body);
+    headers.set("Content-Type", "application/json");
+
+    const approxInputTokens = Math.max(
+      1,
+      Math.ceil(JSON.stringify(chatBody.messages).length / 4)
+    );
+
     const upstreamRes = await fetch(target, {
       method: "POST",
       headers,
@@ -177,8 +184,16 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
           c,
           donePromise.then(async () => {
             pctx.latencyMs = Date.now() - startedAt;
-            const approxTokens = Math.ceil(fullOutput.length / 4);
-            await record(pctx, { input_tokens: 0, output_tokens: approxTokens, total_tokens: approxTokens }, upstreamRes.status);
+            const approxOutputTokens = Math.max(1, Math.ceil(fullOutput.length / 4));
+            await record(
+              pctx,
+              {
+                input_tokens: approxInputTokens,
+                output_tokens: approxOutputTokens,
+                total_tokens: approxInputTokens + approxOutputTokens,
+              },
+              upstreamRes.status
+            );
           })
         );
 
@@ -187,7 +202,11 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
         const chatJson: any = await upstreamRes.json();
         pctx.latencyMs = Date.now() - startedAt;
         const responsesJson = convertChatToResponsesJson(chatJson, requestId);
-        const usage = chatJson.usage || null;
+        const usage = chatJson.usage || {
+          input_tokens: approxInputTokens,
+          output_tokens: Math.max(1, Math.ceil((responsesJson.output?.[0]?.content?.[0]?.text || "").length / 4)),
+          total_tokens: approxInputTokens + Math.max(1, Math.ceil((responsesJson.output?.[0]?.content?.[0]?.text || "").length / 4)),
+        };
         waitUntil(c, record(pctx, usage, upstreamRes.status));
         return c.json(responsesJson, 200);
       }

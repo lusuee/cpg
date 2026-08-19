@@ -1,49 +1,76 @@
 export function convertResponsesRequest(body: any): any {
-  const newBody: Record<string, any> = { ...body };
-  if (!newBody.messages) {
-    const messages: Array<{ role: string; content: any }> = [];
-    if (newBody.instructions && typeof newBody.instructions === "string") {
-      messages.push({ role: "system", content: newBody.instructions });
-    }
-    if (typeof newBody.input === "string") {
-      messages.push({ role: "user", content: newBody.input });
-    } else if (Array.isArray(newBody.input)) {
-      for (const item of newBody.input) {
-        if (typeof item === "string") {
-          messages.push({ role: "user", content: item });
-        } else if (item && typeof item === "object") {
-          let role = item.role;
-          if (!role) {
-            role = item.type === "message" ? (item.role || "user") : "user";
-          }
-          let content = item.content ?? item.text ?? "";
-          if (Array.isArray(content)) {
-            const parts: string[] = [];
-            for (const part of content) {
-              if (typeof part === "string") {
-                parts.push(part);
-              } else if (part && typeof part === "object") {
-                if (typeof part.text === "string") parts.push(part.text);
-                else if (typeof part.input_text === "string") parts.push(part.input_text);
-                else if (part.type === "input_text" && typeof part.text === "string") parts.push(part.text);
-                else parts.push(JSON.stringify(part));
-              }
-            }
-            content = parts.join("\n");
-          } else if (typeof content === "object" && content !== null) {
-            content = (content as any).text || JSON.stringify(content);
-          }
-          messages.push({ role, content: String(content) });
-        }
+  const messages: Array<{ role: string; content: any }> = [];
+
+  if (body.instructions && typeof body.instructions === "string") {
+    messages.push({ role: "system", content: body.instructions });
+  }
+
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
+    for (const m of body.messages) {
+      if (m && typeof m === "object") {
+        messages.push({
+          role: m.role || "user",
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        });
       }
     }
-    newBody.messages = messages.length ? messages : [{ role: "user", content: "Hello" }];
+  } else if (typeof body.input === "string") {
+    messages.push({ role: "user", content: body.input });
+  } else if (Array.isArray(body.input)) {
+    for (const item of body.input) {
+      if (typeof item === "string") {
+        messages.push({ role: "user", content: item });
+      } else if (item && typeof item === "object") {
+        let role = item.role || (item.type === "message" ? (item.role || "user") : "user");
+        let content = item.content ?? item.text ?? "";
+        if (Array.isArray(content)) {
+          const parts: string[] = [];
+          for (const part of content) {
+            if (typeof part === "string") {
+              parts.push(part);
+            } else if (part && typeof part === "object") {
+              if (typeof part.text === "string") parts.push(part.text);
+              else if (typeof part.input_text === "string") parts.push(part.input_text);
+              else if (part.type === "input_text" && typeof part.text === "string") parts.push(part.text);
+              else if (part.type === "text" && typeof part.text === "string") parts.push(part.text);
+              else parts.push(JSON.stringify(part));
+            }
+          }
+          content = parts.join("\n");
+        } else if (typeof content === "object" && content !== null) {
+          content = (content as any).text || JSON.stringify(content);
+        }
+        messages.push({ role, content: String(content) });
+      }
+    }
+  } else if (typeof body.prompt === "string") {
+    messages.push({ role: "user", content: body.prompt });
   }
-  delete newBody.input;
-  delete newBody.instructions;
-  delete newBody.conversation;
-  delete newBody.output_item_types;
-  return newBody;
+
+  if (messages.length === 0) {
+    messages.push({ role: "user", content: "Hello" });
+  }
+
+  const cleanBody: Record<string, any> = {
+    model: body.model,
+    messages,
+    stream: body.stream === true,
+  };
+
+  if (typeof body.temperature === "number") cleanBody.temperature = body.temperature;
+  if (typeof body.top_p === "number") cleanBody.top_p = body.top_p;
+  if (typeof body.presence_penalty === "number") cleanBody.presence_penalty = body.presence_penalty;
+  if (typeof body.frequency_penalty === "number") cleanBody.frequency_penalty = body.frequency_penalty;
+  if (body.stop) cleanBody.stop = body.stop;
+  if (body.response_format) cleanBody.response_format = body.response_format;
+  if (body.seed !== undefined) cleanBody.seed = body.seed;
+
+  const maxTokens = body.max_tokens ?? body.max_output_tokens ?? body.max_completion_tokens;
+  if (typeof maxTokens === "number") {
+    cleanBody.max_tokens = maxTokens;
+  }
+
+  return cleanBody;
 }
 
 export function convertChatToResponsesJson(chatJson: any, responseId: string): any {
