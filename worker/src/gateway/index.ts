@@ -18,6 +18,13 @@ gatewayApp.use("*", async (c, next) => {
 gatewayApp.options("*", (c) => c.newResponse(null, 204));
 
 gatewayApp.get("/models", (c) => listModelsHandler(c));
+gatewayApp.get("/model-catalog.json", async (c) => {
+  const { listModels } = await import("../db/repo");
+  const { buildModelCatalog } = await import("./catalog");
+  const items = await listModels(c.env);
+  const catalog = buildModelCatalog(items);
+  return c.json(catalog);
+});
 
 gatewayApp.post("/messages", (c) => handleGatewayProxy(c, "messages"));
 gatewayApp.post("/chat/completions", (c) => handleGatewayProxy(c, "chat/completions"));

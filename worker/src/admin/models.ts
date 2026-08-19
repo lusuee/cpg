@@ -9,12 +9,32 @@ import {
   batchUpdateModels,
   batchDeleteModels,
 } from "../db/repo";
+import { buildModelCatalog } from "../gateway/catalog";
 
 export const modelsApp = new Hono<{ Bindings: Env }>();
 
 modelsApp.get("/", async (c) => {
   const items = await listModels(c.env);
   return c.json({ items });
+});
+
+modelsApp.get("/catalog", async (c) => {
+  const items = await listModels(c.env);
+  const catalog = buildModelCatalog(items);
+  return c.json(catalog);
+});
+
+modelsApp.get("/catalog/export", async (c) => {
+  const items = await listModels(c.env);
+  const catalog = buildModelCatalog(items);
+  const json = JSON.stringify(catalog, null, 2);
+  return new Response(json, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="model-catalog.json"',
+    },
+  });
 });
 
 modelsApp.post("/", async (c) => {

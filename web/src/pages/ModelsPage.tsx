@@ -2,7 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea, CopyButton } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck, IconTerminal } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck, IconTerminal, IconDownload } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -66,7 +66,8 @@ export default function ModelsPage() {
 
   // Export modal state
   const [showExport, setShowExport] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"codex" | "continue" | "list">("codex");
+  const [exportFormat, setExportFormat] = useState<"catalog" | "toml" | "continue" | "list">("catalog");
+  const [downloadingCatalog, setDownloadingCatalog] = useState(false);
 
   // Sync / Auto-fetch modal state
   const [showSync, setShowSync] = useState(false);
@@ -283,15 +284,79 @@ export default function ModelsPage() {
   const baseUrl = window.location.origin;
   const activeModels = items.filter((m) => m.enabled);
 
-  const codexExportJson = JSON.stringify(
-    {
-      api_base: `${baseUrl}/v1`,
-      api_key: "YOUR_DEVICE_TOKEN",
-      models: activeModels.map((m) => m.alias || m.model_name),
-    },
-    null,
-    2
-  );
+  const modelCatalogObj = {
+    models: activeModels.map((m) => {
+      const slug = m.alias || m.model_name;
+      const displayName = m.display_name || m.alias || m.model_name;
+      const name = m.model_name.toLowerCase();
+      const isReasoning =
+        name.includes("r1") ||
+        name.includes("reason") ||
+        name.includes("thinking") ||
+        name.includes("thought") ||
+        name.includes("qwq") ||
+        name.startsWith("o1") ||
+        name.startsWith("o3") ||
+        name.includes("claude-3-7") ||
+        name.includes("claude-3.7");
+
+      let contextWindow = 128000;
+      if (name.includes("gemini-1.5") || name.includes("gemini-2.0") || name.includes("gemini-2.5")) {
+        contextWindow = 1048576;
+      } else if (name.includes("claude-3") || name.includes("claude-2") || name.includes("o1") || name.includes("o3")) {
+        contextWindow = 200000;
+      } else if (name.includes("deepseek") || name.includes("qwen") || name.includes("qwq") || name.includes("llama-3")) {
+        contextWindow = 131072;
+      }
+
+      let custom: Record<string, any> = {};
+      if (m.config_json) {
+        try {
+          custom = JSON.parse(m.config_json);
+        } catch {
+          // ignore
+        }
+      }
+
+      return {
+        slug,
+        display_name: displayName,
+        description: custom.description || `${displayName} (${m.provider_name || m.provider_id || "Personal AI Gateway"})`,
+        context_window: typeof custom.context_window === "number" ? custom.context_window : contextWindow,
+        default_reasoning_level: isReasoning ? "high" : null,
+        supported_reasoning_levels: isReasoning
+          ? [
+              { effort: "none", description: "Standard (no reasoning)" },
+              { effort: "low", description: "Fast reasoning" },
+              { effort: "medium", description: "Balanced reasoning" },
+              { effort: "high", description: "Deep reasoning" },
+            ]
+          : [],
+        input_modalities:
+          name.includes("4o") || name.includes("vision") || name.includes("vl") || name.includes("gemini") || name.includes("claude-3") || name.includes("pixtral")
+            ? ["text", "image"]
+            : ["text"],
+        supports_parallel_tool_calls: true,
+        ...custom,
+      };
+    }),
+  };
+
+  const modelCatalogJson = JSON.stringify(modelCatalogObj, null, 2);
+
+  const defaultModelSlug = activeModels[0]?.alias || activeModels[0]?.model_name || "gpt-4o";
+
+  const codexTomlConfig = `# ~/.codex/config.toml
+model = "${defaultModelSlug}"
+model_provider = "personal-ai-gateway"
+model_catalog_json = "~/.codex/model-catalog.json"
+
+[model_providers.personal-ai-gateway]
+name = "Personal AI Gateway"
+base_url = "${baseUrl}/v1"
+api_key = "YOUR_DEVICE_TOKEN"
+wire_specification = "openai"
+`;
 
   const continueExportJson = JSON.stringify(
     {
@@ -309,6 +374,17 @@ export default function ModelsPage() {
 
   const modelListText = activeModels.map((m) => m.alias || m.model_name).join("\n");
 
+  const handleDownloadCatalog = async () => {
+    setDownloadingCatalog(true);
+    try {
+      await api.download("/api/models/catalog/export", "model-catalog.json");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "导出 model-catalog.json 失败");
+    } finally {
+      setDownloadingCatalog(false);
+    }
+  };
+
   if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
 
   return (
@@ -321,9 +397,13 @@ export default function ModelsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleDownloadCatalog} disabled={!items.length || downloadingCatalog} className="shadow-sm">
+            <IconDownload />
+            <span>{downloadingCatalog ? "正在导出…" : "导出 model-catalog.json"}</span>
+          </Button>
           <Button variant="outline" onClick={() => setShowExport(true)} disabled={!items.length} className="shadow-sm">
             <IconTerminal />
-            <span>导出 Codex / 客户端配置</span>
+            <span>客户端配置 / 导出</span>
           </Button>
           <Button variant="outline" onClick={openSync} disabled={!providers.length} className="shadow-sm">
             <IconRefresh />
@@ -830,19 +910,33 @@ export default function ModelsPage() {
             将网关 Base URL 和当前已启用的 {activeModels.length} 个模型快速复制到 Codex、Continue、Cursor 或各类 AI 开发工具中。
           </p>
 
-          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap">
             <button
-              onClick={() => setExportFormat("codex")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "codex" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              onClick={() => setExportFormat("catalog")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+                exportFormat === "catalog"
+                  ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
-              Codex / OpenAI 格式 (JSON)
+              <span>⚡ model-catalog.json (Codex 推荐)</span>
+            </button>
+            <button
+              onClick={() => setExportFormat("toml")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                exportFormat === "toml"
+                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              Codex config.toml
             </button>
             <button
               onClick={() => setExportFormat("continue")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "continue" ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                exportFormat === "continue"
+                  ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               Continue / VSCode 格式
@@ -850,7 +944,9 @@ export default function ModelsPage() {
             <button
               onClick={() => setExportFormat("list")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                exportFormat === "list" ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                exportFormat === "list"
+                  ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
               纯模型列表 (Text)
@@ -858,32 +954,65 @@ export default function ModelsPage() {
           </div>
 
           <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
-            <div className="absolute top-3 right-3 z-10">
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+              {exportFormat === "catalog" && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs py-1 px-2.5 h-auto"
+                  onClick={handleDownloadCatalog}
+                  disabled={downloadingCatalog}
+                >
+                  <IconDownload />
+                  <span>{downloadingCatalog ? "下载中…" : "下载 JSON 文件"}</span>
+                </Button>
+              )}
               <CopyButton
                 text={
-                  exportFormat === "codex"
-                    ? codexExportJson
+                  exportFormat === "catalog"
+                    ? modelCatalogJson
+                    : exportFormat === "toml"
+                    ? codexTomlConfig
                     : exportFormat === "continue"
                     ? continueExportJson
                     : modelListText
                 }
-                label="复制配置"
+                label="复制内容"
               />
             </div>
             <pre className="whitespace-pre overflow-x-auto leading-relaxed">
-              {exportFormat === "codex"
-                ? codexExportJson
+              {exportFormat === "catalog"
+                ? modelCatalogJson
+                : exportFormat === "toml"
+                ? codexTomlConfig
                 : exportFormat === "continue"
                 ? continueExportJson
                 : modelListText}
             </pre>
           </div>
 
-          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl text-xs text-blue-800 dark:text-blue-300 space-y-1">
-            <div className="font-semibold">💡 使用提示：</div>
-            <p>1. 将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」页面创建的有效密钥（如 <code>ccs_xxx</code>）。</p>
-            <p>2. 支持直接配置 Base URL：<code>{baseUrl}/v1</code>，客户端每次请求指定任意模型时，网关均会自动透明匹配至对应的上游服务商。</p>
-          </div>
+          {exportFormat === "catalog" ? (
+            <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl text-xs text-blue-800 dark:text-blue-300 space-y-1.5">
+              <div className="font-semibold flex items-center gap-1.5">
+                <span>💡 Codex 接入指南 (model-catalog.json)：</span>
+              </div>
+              <p>1. 点击上方「下载 JSON 文件」保存为 <code>~/.codex/model-catalog.json</code>。</p>
+              <p>2. 在 <code>~/.codex/config.toml</code> 中添加：<code>model_catalog_json = "/绝对路径/.codex/model-catalog.json"</code>。</p>
+              <p>3. 重启 Codex，即可在 <code>/model</code> 选择器中直接使用网关配置的所有已启用模型（包含上下文窗口与推理等级配置）。</p>
+            </div>
+          ) : exportFormat === "toml" ? (
+            <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl text-xs text-indigo-800 dark:text-indigo-300 space-y-1">
+              <div className="font-semibold">💡 Codex config.toml 说明：</div>
+              <p>1. 将配置追加到 <code>~/.codex/config.toml</code> 中，并将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」创建的有效 Token。</p>
+              <p>2. 将 <code>model_catalog_json</code> 指向下载的 <code>model-catalog.json</code> 绝对路径。</p>
+            </div>
+          ) : (
+            <div className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 space-y-1">
+              <div className="font-semibold">💡 使用提示：</div>
+              <p>1. 将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」页面创建的有效密钥（如 <code>ccs_xxx</code>）。</p>
+              <p>2. 支持直接配置 Base URL：<code>{baseUrl}/v1</code>，客户端每次请求指定任意模型时，网关均会自动透明匹配至对应的上游服务商。</p>
+            </div>
+          )}
 
           <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
             <Button variant="secondary" onClick={() => setShowExport(false)}>
