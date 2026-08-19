@@ -18,7 +18,7 @@ function waitUntil(c: Context<{ Bindings: Env }>, p: Promise<void>) {
 
 interface ProxyContext {
   c: Context<{ Bindings: Env }>;
-  kind: "messages" | "chat/completions";
+  kind: "messages" | "chat/completions" | "responses";
   startedAt: number;
   device: { id: string };
   row: ModelWithProvider;
@@ -28,9 +28,9 @@ interface ProxyContext {
   createdAt: number;
 }
 
-function buildTargetUrl(row: ModelWithProvider, kind: "messages" | "chat/completions"): string {
+function buildTargetUrl(row: ModelWithProvider, kind: "messages" | "chat/completions" | "responses"): string {
   const base = (row.provider_endpoint || DEFAULT_ENDPOINTS[row.provider_type]).replace(/\/+$/, "");
-  const suffix = kind === "messages" ? "/messages" : "/chat/completions";
+  const suffix = kind === "messages" ? "/messages" : kind === "responses" ? "/responses" : "/chat/completions";
   return base + suffix;
 }
 
@@ -90,7 +90,7 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   return res;
 }
 
-export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "messages" | "chat/completions") {
+export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "messages" | "chat/completions" | "responses") {
   const device = await authenticateGateway(c);
   if (!device) return c.json({ error: "unauthorized" }, 401);
 
@@ -110,8 +110,8 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   if (kind === "messages" && row.provider_type !== "anthropic") {
     return c.json({ error: "unsupported_provider_for_path", message: "/v1/messages requires an anthropic provider" }, 400);
   }
-  if (kind === "chat/completions" && row.provider_type !== "openai") {
-    return c.json({ error: "unsupported_provider_for_path", message: "/v1/chat/completions requires an openai provider" }, 400);
+  if ((kind === "chat/completions" || kind === "responses") && row.provider_type !== "openai") {
+    return c.json({ error: "unsupported_provider_for_path", message: `/${kind} requires an openai provider` }, 400);
   }
 
   const secretName = row.provider_secret_name;

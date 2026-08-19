@@ -21,7 +21,6 @@ gatewayApp.get("/models", (c) => listModelsHandler(c));
 
 gatewayApp.post("/messages", (c) => handleGatewayProxy(c, "messages"));
 gatewayApp.post("/chat/completions", (c) => handleGatewayProxy(c, "chat/completions"));
-
-gatewayApp.post("/responses", (c) => c.json({ error: "not_implemented", message: "OpenAI Responses API is planned for phase 2" }, 501));
+gatewayApp.post("/responses", (c) => handleGatewayProxy(c, "responses"));
 
 gatewayApp.notFound((c) => c.json({ error: "not_found" }, 404));
