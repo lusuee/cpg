@@ -1,8 +1,9 @@
 import { useCallback, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconProviders } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconProviders, IconModels } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -25,6 +26,7 @@ const emptyForm: FormState = {
 };
 
 export default function ProvidersPage() {
+  const nav = useNavigate();
   const fetchProviders = useCallback(async () => {
     const res = await api.get<{ items: Provider[] }>("/api/providers");
     return res.items || [];
@@ -145,6 +147,10 @@ export default function ProvidersPage() {
                   </td>
                   <td className="py-3 px-2 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => nav("/models")}>
+                        <IconModels />
+                        <span>模型</span>
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
                         <IconEdit />
                         <span>编辑</span>

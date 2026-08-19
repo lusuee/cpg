@@ -26,6 +26,32 @@ modelsApp.post("/", async (c) => {
   return c.json({ item: row }, 201);
 });
 
+modelsApp.post("/batch", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const providerId = body.provider_id;
+  const models = body.models;
+  if (!providerId || typeof providerId !== "string") return c.json({ error: "provider_id is required" }, 400);
+  if (!Array.isArray(models) || !models.length) return c.json({ error: "models array is required" }, 400);
+
+  const provider = await getProvider(c.env, providerId);
+  if (!provider) return c.json({ error: "provider_not_found" }, 400);
+
+  const created = [];
+  for (const m of models) {
+    const name = typeof m === "string" ? m : m.model_name;
+    if (!name || typeof name !== "string") continue;
+    const row = await createModel(c.env, {
+      provider_id: providerId,
+      model_name: name,
+      display_name: typeof m === "object" && m.display_name ? m.display_name : undefined,
+      alias: typeof m === "object" && m.alias ? m.alias : undefined,
+      enabled: true,
+    });
+    created.push(row);
+  }
+  return c.json({ created: created.length, items: created }, 201);
+});
+
 modelsApp.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
