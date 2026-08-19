@@ -1,8 +1,8 @@
 import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
-import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck } from "../components/icons";
+import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea, CopyButton } from "../components/ui";
+import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck, IconTerminal } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -253,6 +253,39 @@ export default function ModelsPage() {
     });
   };
 
+  // Export modal state
+  const [showExport, setShowExport] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"codex" | "continue" | "list">("codex");
+
+  const baseUrl = window.location.origin;
+  const activeModels = items.filter((m) => m.enabled);
+
+  const codexExportJson = JSON.stringify(
+    {
+      api_base: `${baseUrl}/v1`,
+      api_key: "YOUR_DEVICE_TOKEN",
+      models: activeModels.map((m) => m.alias || m.model_name),
+    },
+    null,
+    2
+  );
+
+  const continueExportJson = JSON.stringify(
+    {
+      models: activeModels.map((m) => ({
+        title: m.display_name || m.alias || m.model_name,
+        provider: "openai",
+        model: m.alias || m.model_name,
+        apiBase: `${baseUrl}/v1`,
+        apiKey: "YOUR_DEVICE_TOKEN",
+      })),
+    },
+    null,
+    2
+  );
+
+  const modelListText = activeModels.map((m) => m.alias || m.model_name).join("\n");
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -263,6 +296,10 @@ export default function ModelsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowExport(true)} disabled={!items.length} className="shadow-sm">
+            <IconTerminal />
+            <span>导出 Codex / 客户端配置</span>
+          </Button>
           <Button variant="outline" onClick={openSync} disabled={!providers.length} className="shadow-sm">
             <IconRefresh />
             <span>从上游拉取并导入</span>
@@ -623,6 +660,81 @@ export default function ModelsPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Export Client / Codex Config Modal */}
+      <Modal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        title="导出 Codex / 客户端配置"
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            将网关 Base URL 和当前已启用的 {activeModels.length} 个模型快速复制到 Codex、Continue、Cursor 或各类 AI 开发工具中。
+          </p>
+
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <button
+              onClick={() => setExportFormat("codex")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                exportFormat === "codex" ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Codex / OpenAI 格式 (JSON)
+            </button>
+            <button
+              onClick={() => setExportFormat("continue")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                exportFormat === "continue" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Continue / VSCode 格式
+            </button>
+            <button
+              onClick={() => setExportFormat("list")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                exportFormat === "list" ? "bg-slate-100 text-slate-800" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              纯模型列表 (Text)
+            </button>
+          </div>
+
+          <div className="relative rounded-xl bg-slate-900 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
+            <div className="absolute top-3 right-3 z-10">
+              <CopyButton
+                text={
+                  exportFormat === "codex"
+                    ? codexExportJson
+                    : exportFormat === "continue"
+                    ? continueExportJson
+                    : modelListText
+                }
+                label="复制配置"
+              />
+            </div>
+            <pre className="whitespace-pre overflow-x-auto leading-relaxed">
+              {exportFormat === "codex"
+                ? codexExportJson
+                : exportFormat === "continue"
+                ? continueExportJson
+                : modelListText}
+            </pre>
+          </div>
+
+          <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-800 space-y-1">
+            <div className="font-semibold">💡 使用提示：</div>
+            <p>1. 将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」页面创建的有效密钥（如 <code>ccs_xxx</code>）。</p>
+            <p>2. 支持直接配置 Base URL：<code>{baseUrl}/v1</code>，客户端每次请求指定任意模型时，网关均会自动透明匹配至对应的上游服务商。</p>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setShowExport(false)}>
+              完成
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
