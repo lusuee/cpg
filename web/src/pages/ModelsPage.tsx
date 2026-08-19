@@ -446,10 +446,6 @@ wire_specification = "openai"
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleDownloadCatalog} disabled={!items.length || downloadingCatalog} className="shadow-sm">
-            <IconDownload />
-            <span>{downloadingCatalog ? "正在导出…" : "导出 model-catalog.json"}</span>
-          </Button>
           <Button variant="outline" onClick={() => setShowExport(true)} disabled={!items.length} className="shadow-sm">
             <IconTerminal />
             <span>客户端配置 / 导出</span>
