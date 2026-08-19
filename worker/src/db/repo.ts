@@ -1,11 +1,13 @@
 import type { DeviceRow, Env, ModelWithProvider, ProviderRow, TokenUsage, UsageRow } from "../types";
 import { newId, randomUUID } from "../utils/crypto";
+import { ensureSchema } from "./schema";
 
 const now = () => Date.now();
 
 // ---------- Providers ----------
 
 export async function listProviders(env: Env): Promise<ProviderRow[]> {
+  await ensureSchema(env);
   const res = await env.DB.prepare(
     "SELECT * FROM providers ORDER BY created_at DESC"
   ).all<ProviderRow>();
@@ -78,6 +80,7 @@ export async function deleteProvider(env: Env, id: string): Promise<boolean> {
 // ---------- Models ----------
 
 export async function listModels(env: Env) {
+  await ensureSchema(env);
   const res = await env.DB.prepare(
     "SELECT m.*, p.name as provider_name, p.type as provider_type, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m LEFT JOIN providers p ON p.id = m.provider_id ORDER BY m.created_at DESC"
@@ -178,6 +181,7 @@ export async function listPublicModels(env: Env) {
 // ---------- Devices ----------
 
 export async function listDevices(env: Env) {
+  await ensureSchema(env);
   const res = await env.DB.prepare(
     "SELECT id, name, enabled, last_used_at, created_at, revoked_at FROM devices ORDER BY created_at DESC"
   ).all();
@@ -261,6 +265,7 @@ export async function listUsage(
   env: Env,
   opts: { from?: number; to?: number; provider_id?: string; model?: string; device_id?: string; limit: number; offset: number }
 ) {
+  await ensureSchema(env);
   const where: string[] = [];
   const binds: unknown[] = [];
   if (opts.from !== undefined) { where.push("created_at >= ?"); binds.push(opts.from); }
@@ -279,6 +284,7 @@ export async function listUsage(
 // ---------- Stats ----------
 
 export async function statsSummary(env: Env, since: number) {
+  await ensureSchema(env);
   const row = await env.DB.prepare(
     "SELECT COUNT(*) as request_count, " +
       "COALESCE(SUM(input_tokens), 0) as input_tokens, " +
