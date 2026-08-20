@@ -346,10 +346,16 @@ export default function ModelsPage() {
         name.includes("thinking") ||
         name.includes("thought") ||
         name.includes("qwq") ||
+        name.includes("qvq") ||
         name.startsWith("o1") ||
         name.startsWith("o3") ||
+        name.startsWith("o4") ||
+        name.includes("o1-") ||
+        name.includes("o3-") ||
+        name.includes("o4-") ||
         name.includes("claude-3-7") ||
-        name.includes("claude-3.7");
+        name.includes("claude-3.7") ||
+        name.includes("claude-4");
 
       let contextWindow = 128000;
       if (name.includes("gemini-1.5") || name.includes("gemini-2.0") || name.includes("gemini-2.5")) {

@@ -1,3 +1,5 @@
+import { isReasoningModel } from "./catalog";
+
 export interface ParsedToolCall {
   callId: string;
   name: string;
@@ -244,20 +246,51 @@ export function convertResponsesRequest(body: any): any {
   return cleanBody;
 }
 
+export function cleanReasoningAndContent(
+  rawContent: string,
+  rawReasoning: string
+): { content: string; reasoning: string } {
+  let content = rawContent || "";
+  let reasoning = rawReasoning || "";
+
+  // 1. If reasoning is absent, extract <think>...</think> or <thought>...</thought>
+  if (!reasoning && typeof content === "string") {
+    const thinkBlockMatch = content.match(/<(think|thought)>([\s\S]*?)<\/\1>/i);
+    if (thinkBlockMatch && thinkBlockMatch.index !== undefined) {
+      reasoning = thinkBlockMatch[2].trim();
+      content = (content.slice(0, thinkBlockMatch.index) + content.slice(thinkBlockMatch.index + thinkBlockMatch[0].length)).trim();
+    } else {
+      const closeMatch = content.match(/^([\s\S]*?)<\/(think|thought)>\s*/i);
+      if (closeMatch) {
+        reasoning = closeMatch[1].trim();
+        content = content.slice(closeMatch[0].length).trim();
+      }
+    }
+  }
+
+  // 2. Strip any leftover tags
+  if (typeof content === "string") {
+    content = content.replace(/<\/?(think|thought)>/gi, "").trim();
+  }
+  if (typeof reasoning === "string") {
+    reasoning = reasoning.replace(/<\/?(think|thought)>/gi, "").trim();
+  }
+
+  return { content, reasoning };
+}
+
 export function convertChatToResponsesJson(chatJson: any, responseId: string): any {
   const choice = chatJson.choices?.[0];
   const message = choice?.message;
-  let content = message?.content || choice?.text || "";
-  let reasoning = message?.reasoning_content || message?.reasoning || "";
+  const rawContent = message?.content || choice?.text || "";
+  const rawReasoning = message?.reasoning_content || message?.reasoning || "";
 
-  // Extract <think>...</think> or <thought>...</thought> if reasoning_content is absent but embedded in content
-  if (!reasoning && typeof content === "string") {
-    const thinkMatch = content.match(/^<(think|thought)>([\s\S]*?)<\/\1>\s*/i);
-    if (thinkMatch) {
-      reasoning = thinkMatch[2].trim();
-      content = content.slice(thinkMatch[0].length);
-    }
-  }
+  const cleaned = cleanReasoningAndContent(
+    typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent),
+    typeof rawReasoning === "string" ? rawReasoning : JSON.stringify(rawReasoning)
+  );
+  let content = cleaned.content;
+  let reasoning = cleaned.reasoning;
 
   const output: any[] = [];
   if (reasoning) {
@@ -349,6 +382,8 @@ export function createChatToResponsesTransform(
   let messageDone = false;
 
   let insideThinkTag = false;
+  let tagPendingBuffer = "";
+  let reasoningTagPendingBuffer = "";
   let insideDsmlTag = false;
   let dsmlBuffer = "";
 
@@ -570,26 +605,79 @@ export function createChatToResponsesTransform(
     emittedOutputItems.push(completedFuncItem);
   }
 
+  function handleReasoningChunk(controller: TransformStreamDefaultController<Uint8Array>, text: string) {
+    let remaining = reasoningTagPendingBuffer + text;
+    reasoningTagPendingBuffer = "";
+
+    const closeTagMatch = remaining.match(/<\/(think|thought)>/i);
+    if (closeTagMatch && closeTagMatch.index !== undefined) {
+      const thinkPart = remaining.slice(0, closeTagMatch.index);
+      const afterPart = remaining.slice(closeTagMatch.index + closeTagMatch[0].length);
+      const cleanThink = thinkPart.replace(/<\/?(think|thought)>/gi, "");
+      if (cleanThink) {
+        emitReasoningDelta(controller, cleanThink);
+      }
+      finishReasoning(controller);
+      insideThinkTag = false;
+      if (afterPart) {
+        handleContentChunk(controller, afterPart);
+      }
+      return;
+    }
+
+    const trailing = remaining.match(/<[^>]{0,40}$/);
+    if (trailing) {
+      const safeText = remaining.slice(0, remaining.length - trailing[0].length);
+      reasoningTagPendingBuffer = trailing[0];
+      const cleanSafe = safeText.replace(/<\/?(think|thought)>/gi, "");
+      if (cleanSafe) {
+        emitReasoningDelta(controller, cleanSafe);
+      }
+    } else {
+      const cleanAll = remaining.replace(/<\/?(think|thought)>/gi, "");
+      if (cleanAll) {
+        emitReasoningDelta(controller, cleanAll);
+      }
+    }
+  }
+
   function handleContentChunk(controller: TransformStreamDefaultController<Uint8Array>, text: string) {
-    let remaining = text;
+    let remaining = tagPendingBuffer + text;
+    tagPendingBuffer = "";
 
     while (remaining.length > 0) {
       if (insideThinkTag) {
         const closeTagMatch = remaining.match(/<\/(think|thought)>/i);
         if (closeTagMatch && closeTagMatch.index !== undefined) {
           const thinkContent = remaining.slice(0, closeTagMatch.index);
-          if (thinkContent) {
-            emitReasoningDelta(controller, thinkContent);
+          const cleanThink = thinkContent.replace(/<\/?(think|thought)>/gi, "");
+          if (cleanThink) {
+            emitReasoningDelta(controller, cleanThink);
           }
           finishReasoning(controller);
           insideThinkTag = false;
           remaining = remaining.slice(closeTagMatch.index + closeTagMatch[0].length);
         } else {
-          emitReasoningDelta(controller, remaining);
-          remaining = "";
+          const trailing = remaining.match(/<[^>]{0,40}$/);
+          if (trailing) {
+            const safeText = remaining.slice(0, remaining.length - trailing[0].length);
+            tagPendingBuffer = trailing[0];
+            const cleanSafe = safeText.replace(/<\/?(think|thought)>/gi, "");
+            if (cleanSafe) {
+              emitReasoningDelta(controller, cleanSafe);
+            }
+            remaining = "";
+          } else {
+            const cleanAll = remaining.replace(/<\/?(think|thought)>/gi, "");
+            if (cleanAll) {
+              emitReasoningDelta(controller, cleanAll);
+            }
+            remaining = "";
+          }
         }
       } else if (insideDsmlTag) {
         dsmlBuffer += remaining;
+        remaining = "";
         const closeDsmlMatch = dsmlBuffer.match(/<\s*\/\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
         if (closeDsmlMatch && closeDsmlMatch.index !== undefined) {
           const fullDsml = dsmlBuffer.slice(0, closeDsmlMatch.index + closeDsmlMatch[0].length);
@@ -605,36 +693,55 @@ export function createChatToResponsesTransform(
           }
 
           remaining = afterDsml;
-        } else {
-          remaining = "";
         }
       } else {
         const openThinkMatch = remaining.match(/<(think|thought)>/i);
+        const closeThinkMatch = remaining.match(/<\/(think|thought)>/i);
         const openDsmlMatch = remaining.match(/<\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
 
-        let firstMatch: { type: "think" | "dsml"; index: number; length: number } | null = null;
+        let firstMatch: { type: "open_think" | "close_think" | "open_dsml"; index: number; length: number } | null = null;
         if (openThinkMatch && openThinkMatch.index !== undefined) {
-          firstMatch = { type: "think", index: openThinkMatch.index, length: openThinkMatch[0].length };
+          firstMatch = { type: "open_think", index: openThinkMatch.index, length: openThinkMatch[0].length };
+        }
+        if (closeThinkMatch && closeThinkMatch.index !== undefined) {
+          if (!firstMatch || closeThinkMatch.index < firstMatch.index) {
+            firstMatch = { type: "close_think", index: closeThinkMatch.index, length: closeThinkMatch[0].length };
+          }
         }
         if (openDsmlMatch && openDsmlMatch.index !== undefined) {
           if (!firstMatch || openDsmlMatch.index < firstMatch.index) {
-            firstMatch = { type: "dsml", index: openDsmlMatch.index, length: openDsmlMatch[0].length };
+            firstMatch = { type: "open_dsml", index: openDsmlMatch.index, length: openDsmlMatch[0].length };
           }
         }
 
         if (firstMatch) {
           const preContent = remaining.slice(0, firstMatch.index);
-          if (preContent) {
-            emitContentDelta(controller, preContent);
-          }
-          if (firstMatch.type === "think") {
+          if (firstMatch.type === "open_think") {
+            if (preContent) {
+              emitContentDelta(controller, preContent);
+            }
             insideThinkTag = true;
             remaining = remaining.slice(firstMatch.index + firstMatch.length);
+          } else if (firstMatch.type === "close_think") {
+            if (!reasoningDone && !messageStarted) {
+              if (preContent) {
+                emitReasoningDelta(controller, preContent);
+              }
+            } else {
+              if (preContent) {
+                emitContentDelta(controller, preContent);
+              }
+            }
+            finishReasoning(controller);
+            insideThinkTag = false;
+            remaining = remaining.slice(firstMatch.index + firstMatch.length);
           } else {
+            if (preContent) {
+              emitContentDelta(controller, preContent);
+            }
             insideDsmlTag = true;
             dsmlBuffer = remaining.slice(firstMatch.index);
             remaining = "";
-            // Check if already closed within this chunk
             const closeDsmlMatch = dsmlBuffer.match(/<\s*\/\s*\|\s*DSML\s*\|\s*tool_calls\s*>/i);
             if (closeDsmlMatch && closeDsmlMatch.index !== undefined) {
               const fullDsml = dsmlBuffer.slice(0, closeDsmlMatch.index + closeDsmlMatch[0].length);
@@ -653,8 +760,18 @@ export function createChatToResponsesTransform(
             }
           }
         } else {
-          emitContentDelta(controller, remaining);
-          remaining = "";
+          const trailing = remaining.match(/<[^>]{0,40}$/);
+          if (trailing) {
+            const safeText = remaining.slice(0, remaining.length - trailing[0].length);
+            tagPendingBuffer = trailing[0];
+            if (safeText) {
+              emitContentDelta(controller, safeText);
+            }
+            remaining = "";
+          } else {
+            emitContentDelta(controller, remaining);
+            remaining = "";
+          }
         }
       }
     }
@@ -676,7 +793,7 @@ export function createChatToResponsesTransform(
       // 1. Handle explicit reasoning deltas
       const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning ?? "";
       if (reasoningDelta && typeof reasoningDelta === "string") {
-        emitReasoningDelta(controller, reasoningDelta);
+        handleReasoningChunk(controller, reasoningDelta);
       }
 
       // 2. Handle standard OpenAI streaming tool_calls
@@ -753,6 +870,24 @@ export function createChatToResponsesTransform(
     flush(controller) {
       if (buffer.trim()) {
         processLine(controller, buffer);
+      }
+
+      if (reasoningTagPendingBuffer) {
+        const clean = reasoningTagPendingBuffer.replace(/<\/?(think|thought)>/gi, "");
+        if (clean) emitReasoningDelta(controller, clean);
+        reasoningTagPendingBuffer = "";
+      }
+
+      if (tagPendingBuffer) {
+        const clean = tagPendingBuffer.replace(/<\/?(think|thought)>/gi, "");
+        if (clean) {
+          if (insideThinkTag) {
+            emitReasoningDelta(controller, clean);
+          } else {
+            emitContentDelta(controller, clean);
+          }
+        }
+        tagPendingBuffer = "";
       }
 
       // Flush lingering DSML buffer if stream ended

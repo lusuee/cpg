@@ -73,17 +73,23 @@ export function inferContextWindow(modelName: string): number {
 }
 
 export function isReasoningModel(modelName: string): boolean {
-  const name = modelName.toLowerCase();
+  const name = (modelName || "").toLowerCase();
   return (
     name.includes("r1") ||
     name.includes("reason") ||
     name.includes("thinking") ||
     name.includes("thought") ||
     name.includes("qwq") ||
+    name.includes("qvq") ||
     name.startsWith("o1") ||
     name.startsWith("o3") ||
+    name.startsWith("o4") ||
+    name.includes("o1-") ||
+    name.includes("o3-") ||
+    name.includes("o4-") ||
     name.includes("claude-3-7") ||
-    name.includes("claude-3.7")
+    name.includes("claude-3.7") ||
+    name.includes("claude-4")
   );
 }
 

@@ -238,5 +238,137 @@ describe("responses_adapter", () => {
     expect(resp2.output[0].type).toBe("reasoning");
     expect(resp2.output[1].type).toBe("message");
     expect(resp2.output[1].content[0].text).toBe("The final answer is 100.");
+
+    const chatJsonImplicit = {
+      id: "chatcmpl-r3",
+      model: "deepseek-r1",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "Implicit thoughts here without opening tag </think> Clean answer here.",
+          },
+        },
+      ],
+    };
+
+    const resp3 = convertChatToResponsesJson(chatJsonImplicit, "resp_r3");
+    expect(resp3.output.length).toBe(2);
+    expect(resp3.output[0].type).toBe("reasoning");
+    expect(resp3.output[1].type).toBe("message");
+    expect(resp3.output[1].content[0].text).toBe("Clean answer here.");
+  });
+
+  it("handles <think> and </think> tags split across multiple chunks", async () => {
+    const rawChunks = [
+      'data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"<th"}}]}\n\n',
+      'data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"ink>Thinking about the problem... </th"}}]}\n\n',
+      'data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"ink> Here is the answer."}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of rawChunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    let finishedText = "";
+    let finishedMeta: any;
+    const transform = createChatToResponsesTransform("resp_test_split", "deepseek-chat", (text, meta) => {
+      finishedText = text;
+      finishedMeta = meta;
+    });
+
+    const transformed = stream.pipeThrough(transform);
+    const reader = transformed.getReader();
+    const decoder = new TextDecoder();
+    let result = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      result += decoder.decode(value);
+    }
+
+    expect(finishedText.trim()).toBe("Here is the answer.");
+    expect(finishedMeta?.reasoning).toContain("Thinking about the problem...");
+    expect(result).not.toContain("<think>");
+    expect(result).not.toContain("</think>");
+    expect(result).not.toContain("<th");
+    expect(result).not.toContain("ink>");
+  });
+
+  it("handles standalone </think> in content when no opening <think> was sent", async () => {
+    const rawChunks = [
+      'data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"Testing tool whether normal. </think> Tool abnormal, applying patch."}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of rawChunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    let finishedText = "";
+    const transform = createChatToResponsesTransform("resp_test_standalone_close", "deepseek-r1", (text) => {
+      finishedText = text;
+    });
+
+    const transformed = stream.pipeThrough(transform);
+    const reader = transformed.getReader();
+    const decoder = new TextDecoder();
+    let result = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      result += decoder.decode(value);
+    }
+
+    expect(finishedText.trim()).toBe("Tool abnormal, applying patch.");
+    expect(result).not.toContain("</think>");
+  });
+
+  it("handles </think> embedded inside reasoning_content", async () => {
+    const rawChunks = [
+      'data: {"id":"chatcmpl-1","choices":[{"delta":{"reasoning_content":"Step 1: check files. </think> Here is the output"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of rawChunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    let finishedText = "";
+    let finishedMeta: any;
+    const transform = createChatToResponsesTransform("resp_test_reasoning_close", "deepseek-r1", (text, meta) => {
+      finishedText = text;
+      finishedMeta = meta;
+    });
+
+    const transformed = stream.pipeThrough(transform);
+    const reader = transformed.getReader();
+    const decoder = new TextDecoder();
+    let result = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      result += decoder.decode(value);
+    }
+
+    expect(finishedText.trim()).toBe("Here is the output");
+    expect(finishedMeta?.reasoning?.trim()).toBe("Step 1: check files.");
+    expect(result).not.toContain("</think>");
   });
 });
