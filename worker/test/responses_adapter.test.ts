@@ -371,4 +371,60 @@ describe("responses_adapter", () => {
     expect(finishedMeta?.reasoning?.trim()).toBe("Step 1: check files.");
     expect(result).not.toContain("</think>");
   });
+
+  it("detects repetition loop and circuit breaks streaming content", async () => {
+    const repeatedSentence = "补丁工具还是中止了，我改用更小的补丁，试试是否能成功。\n";
+    const rawChunks = [
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"文件没有变更。\n"}}]}\n\n`,
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"${repeatedSentence}"}}]}\n\n`,
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"${repeatedSentence}"}}]}\n\n`,
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"${repeatedSentence}"}}]}\n\n`,
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"${repeatedSentence}"}}]}\n\n`,
+      `data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"${repeatedSentence}"}}]}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of rawChunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    let finishedText = "";
+    const transform = createChatToResponsesTransform("resp_test_loop", "deepseek-r1", (text) => {
+      finishedText = text;
+    });
+
+    const transformed = stream.pipeThrough(transform);
+    const reader = transformed.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    // Should break and not contain 5+ repetitions
+    const count = (finishedText.match(/补丁工具还是中止了/g) || []).length;
+    expect(count).toBeLessThanOrEqual(3);
+  });
+
+  it("applies default presence_penalty and customConfig in convertResponsesRequest", () => {
+    const req1 = {
+      model: "test-model",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const converted1 = convertResponsesRequest(req1);
+    expect(converted1.presence_penalty).toBe(0.1);
+
+    const req2 = {
+      model: "test-model",
+      messages: [{ role: "user", content: "hello" }],
+      presence_penalty: 0.5,
+    };
+    const converted2 = convertResponsesRequest(req2, { presence_penalty: 0.2, temperature: 0.7 });
+    expect(converted2.presence_penalty).toBe(0.5);
+    expect(converted2.temperature).toBe(0.7);
+  });
 });

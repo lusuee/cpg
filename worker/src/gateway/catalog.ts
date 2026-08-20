@@ -161,7 +161,7 @@ export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
 
     const entry: ModelCatalogEntry = {
       additional_speed_tiers: [],
-      apply_patch_tool_type: "freeform",
+      apply_patch_tool_type: customConfig.apply_patch_tool_type || "freeform",
       availability_nux: null,
       base_instructions: customConfig.base_instructions || catalogTemplate.base_instructions,
       context_window: contextWindow,

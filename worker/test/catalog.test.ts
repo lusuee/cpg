@@ -64,7 +64,7 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
         cache_enabled: 0,
         cache_ttl: 3600,
         enabled: 1,
-        config_json: null,
+        config_json: JSON.stringify({ apply_patch_tool_type: "function" }),
         created_at: Date.now(),
         updated_at: Date.now(),
       },
@@ -110,6 +110,7 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
     const m2 = catalog.models.find((x) => x.slug === "deepseek-r1");
     expect(m2).toBeDefined();
     expect(m2?.display_name).toBe("DeepSeek R1");
+    expect(m2?.apply_patch_tool_type).toBe("function");
     expect(m2?.supported_reasoning_levels?.length).toBeGreaterThan(0);
     expect(m2?.priority).toBe(1001);
   });

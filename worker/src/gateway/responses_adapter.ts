@@ -65,7 +65,7 @@ export function extractDsmlToolCalls(text: string): { cleanContent: string; tool
   return { cleanContent, toolCalls };
 }
 
-export function convertResponsesRequest(body: any): any {
+export function convertResponsesRequest(body: any, customConfig?: Record<string, any>): any {
   const messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string }> = [];
 
   if (body.instructions && typeof body.instructions === "string") {
@@ -230,10 +230,24 @@ export function convertResponsesRequest(body: any): any {
       }
     }
   }
-  if (typeof body.temperature === "number") cleanBody.temperature = body.temperature;
-  if (typeof body.top_p === "number") cleanBody.top_p = body.top_p;
-  if (typeof body.presence_penalty === "number") cleanBody.presence_penalty = body.presence_penalty;
-  if (typeof body.frequency_penalty === "number") cleanBody.frequency_penalty = body.frequency_penalty;
+  const temp = typeof body.temperature === "number" ? body.temperature : customConfig?.temperature;
+  if (typeof temp === "number") cleanBody.temperature = temp;
+
+  const topP = typeof body.top_p === "number" ? body.top_p : customConfig?.top_p;
+  if (typeof topP === "number") cleanBody.top_p = topP;
+
+  const presencePenalty = typeof body.presence_penalty === "number"
+    ? body.presence_penalty
+    : typeof customConfig?.presence_penalty === "number"
+    ? customConfig.presence_penalty
+    : 0.1; // Default mild anti-repetition penalty
+  if (typeof presencePenalty === "number") cleanBody.presence_penalty = presencePenalty;
+
+  const freqPenalty = typeof body.frequency_penalty === "number"
+    ? body.frequency_penalty
+    : customConfig?.frequency_penalty;
+  if (typeof freqPenalty === "number") cleanBody.frequency_penalty = freqPenalty;
+
   if (body.stop) cleanBody.stop = body.stop;
   if (body.response_format) cleanBody.response_format = body.response_format;
   if (body.seed !== undefined) cleanBody.seed = body.seed;
@@ -365,6 +379,27 @@ export function convertChatToResponsesJson(chatJson: any, responseId: string): a
   };
 }
 
+export function detectRepetitionLoop(text: string): { isLoop: boolean; loopPattern?: string } {
+  if (text.length < 36) return { isLoop: false };
+  const tail = text.slice(-600);
+  const maxL = Math.min(200, Math.floor(tail.length / 3));
+
+  for (let l = 12; l <= maxL; l++) {
+    const pattern = tail.slice(-l);
+    const trimmed = pattern.trim();
+    if (trimmed.length < 12) continue;
+
+    // Ignore horizontal rules or separator lines (e.g. ------------ or ========)
+    if (new Set(trimmed).size < 4) continue;
+
+    if (tail.endsWith(pattern + pattern + pattern)) {
+      return { isLoop: true, loopPattern: pattern };
+    }
+  }
+
+  return { isLoop: false };
+}
+
 export function createChatToResponsesTransform(
   responseId: string,
   modelName: string,
@@ -386,6 +421,8 @@ export function createChatToResponsesTransform(
   let reasoningTagPendingBuffer = "";
   let insideDsmlTag = false;
   let dsmlBuffer = "";
+  let contentLoopDetected = false;
+  let reasoningLoopDetected = false;
 
   let outputIndexCounter = 0;
   const emittedOutputItems: any[] = [];
@@ -429,8 +466,18 @@ export function createChatToResponsesTransform(
   }
 
   function emitReasoningDelta(controller: TransformStreamDefaultController<Uint8Array>, delta: string) {
+    if (reasoningLoopDetected || !delta) return;
     ensureCreated(controller);
     startReasoning(controller);
+
+    const tentative = fullReasoning + delta;
+    const loopCheck = detectRepetitionLoop(tentative);
+    if (loopCheck.isLoop) {
+      reasoningLoopDetected = true;
+      finishReasoning(controller);
+      return;
+    }
+
     fullReasoning += delta;
     sendEvent(controller, "response.reasoning_text.delta", {
       response_id: responseId,
@@ -492,8 +539,18 @@ export function createChatToResponsesTransform(
   }
 
   function emitContentDelta(controller: TransformStreamDefaultController<Uint8Array>, delta: string) {
+    if (contentLoopDetected || !delta) return;
     ensureCreated(controller);
     startMessage(controller);
+
+    const tentative = fullContent + delta;
+    const loopCheck = detectRepetitionLoop(tentative);
+    if (loopCheck.isLoop) {
+      contentLoopDetected = true;
+      finishMessage(controller);
+      return;
+    }
+
     fullContent += delta;
     sendEvent(controller, "response.output_text.delta", {
       response_id: responseId,

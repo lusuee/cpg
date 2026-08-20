@@ -236,7 +236,11 @@ async function executeProxyAttempt(
 
   if (kind === "responses") {
     const target = buildTargetUrl(row, "chat/completions");
-    const chatBody = convertResponsesRequest(reqBody);
+    let modelConfig: Record<string, any> | undefined;
+    if (row.config_json) {
+      try { modelConfig = JSON.parse(row.config_json); } catch {}
+    }
+    const chatBody = convertResponsesRequest(reqBody, modelConfig);
     headers.set("Content-Type", "application/json");
 
     const approxInputTokens = Math.max(1, Math.ceil(JSON.stringify(chatBody.messages).length / 4));
