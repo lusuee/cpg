@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { addGatewayCorsHeaders } from "../utils/http";
-import { handleGatewayProxy, listModelsHandler } from "./proxy";
+import { handleGatewayProxy, listModelsHandler, getModelHandler } from "./proxy";
 
 export const gatewayApp = new Hono<{ Bindings: Env }>();
 
@@ -18,6 +18,7 @@ gatewayApp.use("*", async (c, next) => {
 gatewayApp.options("*", (c) => c.newResponse(null, 204));
 
 gatewayApp.get("/models", (c) => listModelsHandler(c));
+gatewayApp.get("/models/:model", (c) => getModelHandler(c));
 gatewayApp.get("/model-catalog.json", async (c) => {
   const { listModels } = await import("../db/repo");
   const { buildModelCatalog } = await import("./catalog");

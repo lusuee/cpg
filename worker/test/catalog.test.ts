@@ -114,4 +114,90 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
     expect(m2?.supported_reasoning_levels?.length).toBeGreaterThan(0);
     expect(m2?.priority).toBe(1001);
   });
+
+  it("handles listModelsHandler returning models and aliases", async () => {
+    const { listModelsHandler } = await import("../src/gateway/proxy");
+    const mockDb = {
+      prepare: () => ({
+        all: async () => ({
+          results: [
+            {
+              id: "m1",
+              model_name: "gpt-4o",
+              display_name: "GPT-4o",
+              alias: "gpt-4o-latest",
+              fallback_model_id: null,
+              input_price_per_m: 2.5,
+              output_price_per_m: 10,
+              created_at: 1700000000000,
+              owned_by: "openai",
+            },
+          ],
+        }),
+      }),
+    };
+
+    const mockContext: any = {
+      req: {
+        header: (k: string) => (k.toLowerCase() === "authorization" ? "Bearer dkey_valid" : undefined),
+      },
+      env: {
+        DB: {
+          prepare: (sql: string) => ({
+            bind: () => ({
+              first: async () => ({ id: "d1", name: "Dev Laptop", enabled: 1 }),
+            }),
+            all: mockDb.prepare().all,
+          }),
+        },
+      },
+      json: (data: any, status?: number) => ({ data, status: status || 200 }),
+    };
+
+    const res = await listModelsHandler(mockContext);
+    expect(res.data.object).toBe("list");
+    expect(res.data.data.length).toBe(2);
+    expect(res.data.data.map((x: any) => x.id)).toEqual(["gpt-4o", "gpt-4o-latest"]);
+  });
+
+  it("handles getModelHandler for specific model", async () => {
+    const { getModelHandler } = await import("../src/gateway/proxy");
+    const mockContext: any = {
+      req: {
+        param: (p: string) => (p === "model" ? "gpt-4o" : undefined),
+        header: (k: string) => (k.toLowerCase() === "authorization" ? "Bearer dkey_valid" : undefined),
+      },
+      env: {
+        DB: {
+          prepare: (sql: string) => ({
+            bind: (...args: any[]) => ({
+              first: async () => {
+                if (args[0] === "dkey_valid") {
+                  return { id: "d1", name: "Dev Laptop", enabled: 1 };
+                }
+                return {
+                  id: "m1",
+                  model_name: "gpt-4o",
+                  display_name: "GPT-4o",
+                  alias: "gpt-4o-latest",
+                  provider_id: "prov_openai",
+                  provider_name: "OpenAI",
+                  provider_type: "openai",
+                  enabled: 1,
+                  provider_enabled: 1,
+                  created_at: 1700000000000,
+                };
+              },
+            }),
+          }),
+        },
+      },
+      json: (data: any, status?: number) => ({ data, status: status || 200 }),
+    };
+
+    const res = await getModelHandler(mockContext);
+    expect(res.data.id).toBe("gpt-4o");
+    expect(res.data.object).toBe("model");
+    expect(res.data.owned_by).toBe("OpenAI");
+  });
 });

@@ -553,17 +553,69 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY p.name, m.model_name"
   ).all();
-  const data = (res.results || []).map((r: any) => ({
-    id: r.model_name || r.id,
-    object: "model",
-    created: r.created_at ? Math.floor(r.created_at / 1000) : 0,
-    owned_by: r.owned_by || "",
-    display_name: r.display_name || null,
-    alias: r.alias || null,
-    fallback_model_id: r.fallback_model_id || null,
-    input_price_per_m: r.input_price_per_m || 0,
-    output_price_per_m: r.output_price_per_m || 0,
-  }));
+
+  const data: any[] = [];
+  const seenIds = new Set<string>();
+
+  for (const r of (res.results || []) as any[]) {
+    const created = r.created_at ? Math.floor(r.created_at / 1000) : 0;
+    const baseEntry = {
+      object: "model",
+      created,
+      owned_by: r.owned_by || "",
+      display_name: r.display_name || null,
+      alias: r.alias || null,
+      fallback_model_id: r.fallback_model_id || null,
+      input_price_per_m: r.input_price_per_m || 0,
+      output_price_per_m: r.output_price_per_m || 0,
+    };
+
+    if (r.model_name && !seenIds.has(r.model_name)) {
+      seenIds.add(r.model_name);
+      data.push({ id: r.model_name, ...baseEntry });
+    }
+
+    if (r.alias && !seenIds.has(r.alias)) {
+      seenIds.add(r.alias);
+      data.push({ id: r.alias, ...baseEntry });
+    }
+  }
+
   return c.json({ object: "list", data });
+}
+
+export async function getModelHandler(c: Context<{ Bindings: Env }>) {
+  const modelId = c.req.param("model");
+  if (!modelId) return c.json({ error: "model_not_found" }, 404);
+
+  const device = await authenticateGateway(c);
+  if (!device) return c.json({ error: "unauthorized" }, 401);
+
+  const row = await findModelAndProvider(c.env, modelId);
+  if (!row) {
+    return c.json(
+      {
+        error: {
+          message: `The model '${modelId}' does not exist`,
+          type: "invalid_request_error",
+          param: "model",
+          code: "model_not_found",
+        },
+      },
+      404
+    );
+  }
+
+  return c.json({
+    id: modelId,
+    object: "model",
+    created: row.created_at ? Math.floor(row.created_at / 1000) : 0,
+    owned_by: row.provider_name || row.provider_type || "",
+    display_name: row.display_name || null,
+    alias: row.alias || null,
+    fallback_model_id: row.fallback_model_id || null,
+    input_price_per_m: row.input_price_per_m || 0,
+    output_price_per_m: row.output_price_per_m || 0,
+  });
 }
 
