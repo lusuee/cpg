@@ -543,11 +543,6 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
 }
 
 export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
-  if (c.req.header("accept")?.includes("text/html") && c.env.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
-  }
-  const device = await authenticateGateway(c);
-  if (!device) return c.json({ error: "unauthorized" }, 401);
   const res = await c.env.DB.prepare(
     "SELECT m.id, m.model_name, m.display_name, m.alias, m.fallback_model_id, m.input_price_per_m, m.output_price_per_m, m.created_at, p.name as owned_by " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
@@ -559,25 +554,44 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
 
   for (const r of (res.results || []) as any[]) {
     const created = r.created_at ? Math.floor(r.created_at / 1000) : 0;
-    const baseEntry = {
+    const makeEntry = (id: string) => ({
+      id,
       object: "model",
       created,
-      owned_by: r.owned_by || "",
+      owned_by: r.owned_by || "system",
+      permission: [
+        {
+          id: `modelperm-${id}`,
+          object: "model_permission",
+          created,
+          allow_create_engine: false,
+          allow_sampling: true,
+          allow_logprobs: true,
+          allow_search_indices: false,
+          allow_view: true,
+          allow_fine_tuning: false,
+          organization: "*",
+          group: null,
+          is_blocking: false,
+        },
+      ],
+      root: id,
+      parent: null,
       display_name: r.display_name || null,
       alias: r.alias || null,
       fallback_model_id: r.fallback_model_id || null,
       input_price_per_m: r.input_price_per_m || 0,
       output_price_per_m: r.output_price_per_m || 0,
-    };
+    });
 
     if (r.model_name && !seenIds.has(r.model_name)) {
       seenIds.add(r.model_name);
-      data.push({ id: r.model_name, ...baseEntry });
+      data.push(makeEntry(r.model_name));
     }
 
     if (r.alias && !seenIds.has(r.alias)) {
       seenIds.add(r.alias);
-      data.push({ id: r.alias, ...baseEntry });
+      data.push(makeEntry(r.alias));
     }
   }
 
@@ -587,9 +601,6 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
 export async function getModelHandler(c: Context<{ Bindings: Env }>) {
   const modelId = c.req.param("model");
   if (!modelId) return c.json({ error: "model_not_found" }, 404);
-
-  const device = await authenticateGateway(c);
-  if (!device) return c.json({ error: "unauthorized" }, 401);
 
   const row = await findModelAndProvider(c.env, modelId);
   if (!row) {
@@ -606,16 +617,70 @@ export async function getModelHandler(c: Context<{ Bindings: Env }>) {
     );
   }
 
+  const created = row.created_at ? Math.floor(row.created_at / 1000) : 0;
   return c.json({
     id: modelId,
     object: "model",
-    created: row.created_at ? Math.floor(row.created_at / 1000) : 0,
-    owned_by: row.provider_name || row.provider_type || "",
+    created,
+    owned_by: row.provider_name || row.provider_type || "system",
+    permission: [
+      {
+        id: `modelperm-${modelId}`,
+        object: "model_permission",
+        created,
+        allow_create_engine: false,
+        allow_sampling: true,
+        allow_logprobs: true,
+        allow_search_indices: false,
+        allow_view: true,
+        allow_fine_tuning: false,
+        organization: "*",
+        group: null,
+        is_blocking: false,
+      },
+    ],
+    root: modelId,
+    parent: null,
     display_name: row.display_name || null,
     alias: row.alias || null,
     fallback_model_id: row.fallback_model_id || null,
     input_price_per_m: row.input_price_per_m || 0,
     output_price_per_m: row.output_price_per_m || 0,
   });
+}
+
+export async function listOllamaTagsHandler(c: Context<{ Bindings: Env }>) {
+  const res = await c.env.DB.prepare(
+    "SELECT m.id, m.model_name, m.display_name, m.alias, m.created_at, p.name as owned_by " +
+      "FROM models m JOIN providers p ON p.id = m.provider_id " +
+      "WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY p.name, m.model_name"
+  ).all();
+
+  const models: any[] = [];
+  const seen = new Set<string>();
+
+  for (const r of (res.results || []) as any[]) {
+    const names = [r.alias, r.model_name].filter(Boolean);
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      models.push({
+        name,
+        model: name,
+        modified_at: new Date(r.created_at || Date.now()).toISOString(),
+        size: 0,
+        digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        details: {
+          format: "custom",
+          family: r.owned_by || "ai",
+          families: [r.owned_by || "ai"],
+          parameter_size: "unknown",
+          quantization_level: "none",
+        },
+      });
+    }
+  }
+
+  return c.json({ models });
 }
 

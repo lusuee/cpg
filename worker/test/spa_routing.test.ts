@@ -43,7 +43,7 @@ describe("SPA Routing & Browser Refresh Protection", () => {
     expect(body).toContain("React App");
   });
 
-  it("returns unauthorized for API clients calling GET /models without bearer token and not requesting HTML", async () => {
+  it("returns model list for API clients calling GET /models without bearer token and not requesting HTML", async () => {
     const mockEnv = {
       DB: {
         prepare: () => ({
@@ -52,6 +52,7 @@ describe("SPA Routing & Browser Refresh Protection", () => {
             all: async () => ({ results: [] }),
             first: async () => null,
           }),
+          all: async () => ({ results: [] }),
         }),
       } as any,
       ASSETS: {
@@ -67,9 +68,9 @@ describe("SPA Routing & Browser Refresh Protection", () => {
     });
 
     const res = await app.fetch(req, mockEnv);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
 
     const json = (await res.json()) as any;
-    expect(json.error).toBe("unauthorized");
+    expect(json.object).toBe("list");
   });
 });

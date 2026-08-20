@@ -4,17 +4,22 @@ import { adminApp } from "./admin";
 import { gatewayApp } from "./gateway";
 import { ensureSchema } from "./db/schema";
 import { aggregateDailyStats } from "./db/repo";
+import { listOllamaTagsHandler } from "./gateway/proxy";
 
 export const app = new Hono<{ Bindings: Env }>();
 
 // Browser HTML navigation & SPA page refresh protection:
-// If a browser sends GET for HTML on any non-API route (e.g. /models, /providers, /settings), serve SPA frontend assets
+// If a browser sends GET for HTML on any non-API route without API auth (e.g. /models, /providers, /settings), serve SPA frontend assets
 app.use("*", async (c, next) => {
+  const hasAuth = !!(c.req.header("authorization") || c.req.header("x-api-key"));
+  const isHtml = c.req.header("accept")?.includes("text/html");
+
   if (
     c.req.method === "GET" &&
     !c.req.path.startsWith("/api/") &&
     !c.req.path.startsWith("/v1/") &&
-    c.req.header("accept")?.includes("text/html") &&
+    isHtml &&
+    !hasAuth &&
     c.env.ASSETS
   ) {
     return c.env.ASSETS.fetch(c.req.raw);
@@ -33,6 +38,7 @@ app.use("/v1/*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true, service: "personal-ai-gateway" }));
+app.get("/api/tags", (c) => listOllamaTagsHandler(c));
 
 app.route("/api", adminApp);
 app.route("/v1", gatewayApp);
