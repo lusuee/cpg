@@ -174,7 +174,15 @@ export function Badge({
   );
 }
 
-export function CopyButton({ text, label }: { text: string; label?: string }) {
+export function CopyButton({
+  text,
+  label,
+  className = "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 p-1 rounded",
+}: {
+  text: string;
+  label?: string;
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -191,7 +199,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+      className={`inline-flex items-center gap-1 text-xs font-medium transition-colors cursor-pointer ${className}`}
       title="复制"
     >
       {copied ? <IconCheck className="text-emerald-600 dark:text-emerald-400" /> : <IconCopy />}

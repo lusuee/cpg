@@ -488,54 +488,54 @@ wire_specification = "openai"
               <span>🧭</span>
               <span>路由逻辑:</span>
             </span>
-            <div className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 font-mono flex-wrap">
-              <span className="px-1.5 py-0.5 rounded bg-blue-100/70 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 font-medium">1. 请求 Model</span>
+            <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium flex-wrap">
+              <span className="px-2 py-0.5 rounded bg-blue-100/80 dark:bg-blue-900/50 text-blue-900 dark:text-blue-200 font-semibold font-mono">1. 请求 Model</span>
               <span className="text-slate-400">→</span>
-              <span className="px-1.5 py-0.5 rounded bg-indigo-100/70 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-300 font-medium">2. 别名优先 (Alias)</span>
+              <span className="px-2 py-0.5 rounded bg-indigo-100/80 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-200 font-semibold font-mono">2. 别名优先 (Alias)</span>
               <span className="text-slate-400">→</span>
-              <span className="px-1.5 py-0.5 rounded bg-purple-100/70 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 font-medium">3. 原始 Model 直通</span>
+              <span className="px-2 py-0.5 rounded bg-purple-100/80 dark:bg-purple-900/50 text-purple-900 dark:text-purple-200 font-semibold font-mono">3. 原始 Model 直通</span>
               <span className="text-slate-400">→</span>
-              <span className="px-1.5 py-0.5 rounded bg-amber-100/70 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-medium">4. 故障降级 (Fallback)</span>
+              <span className="px-2 py-0.5 rounded bg-amber-100/80 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-semibold font-mono">4. 故障降级 (Fallback)</span>
             </div>
           </div>
 
           <button
             type="button"
             onClick={toggleBanner}
-            className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center gap-1 shrink-0 px-2 py-1 rounded-md hover:bg-blue-100/50 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
+            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center gap-1 shrink-0 px-2 py-1 rounded-md hover:bg-blue-100/50 dark:hover:bg-blue-900/40 transition-colors cursor-pointer"
           >
             <span>{showBanner ? "收起说明" : "查看说明"}</span>
-            <span className="text-[9px]">{showBanner ? "▲" : "▼"}</span>
+            <span className="text-[10px]">{showBanner ? "▲" : "▼"}</span>
           </button>
         </div>
 
         {showBanner ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-2.5 pt-2.5 border-t border-blue-100/80 dark:border-blue-900/40 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-blue-100/80 dark:border-blue-900/40 shadow-xs space-y-0.5">
-              <div className="text-blue-600 dark:text-blue-400 font-semibold text-[11px]">1. 客户端请求 (Model)</div>
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                提取客户端 <code>model</code> 参数（如 <code>gpt-4o</code>、<code>claude</code> 或 <code>deepseek-v3</code>）。
+            <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-lg border border-blue-100/80 dark:border-blue-900/40 shadow-xs space-y-1">
+              <div className="text-blue-600 dark:text-blue-400 font-bold text-xs">1. 客户端请求 (Model)</div>
+              <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+                提取客户端 <code className="font-semibold text-blue-900 dark:text-blue-200 bg-blue-100/70 dark:bg-blue-900/40 border-blue-200/60 dark:border-blue-800/60">model</code> 参数（如 <code>gpt-4o</code>、<code>claude</code> 或 <code>deepseek-v3</code>）。
               </p>
             </div>
 
-            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs space-y-0.5">
-              <div className="text-indigo-600 dark:text-indigo-400 font-semibold text-[11px]">2. 别名优先匹配 (Alias)</div>
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                <strong>第一优先级</strong>：优先匹配 <strong>快捷别名</strong>，如将 <code>gpt4</code> 映射转发至 <code>gpt-4o-2024-11-20</code>。
+            <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-lg border border-indigo-100/80 dark:border-indigo-900/40 shadow-xs space-y-1">
+              <div className="text-indigo-600 dark:text-indigo-400 font-bold text-xs">2. 别名优先匹配 (Alias)</div>
+              <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+                <strong>第一优先级</strong>：优先匹配 <strong>快捷别名</strong>，如将 <code className="font-semibold text-indigo-900 dark:text-indigo-200 bg-indigo-100/70 dark:bg-indigo-900/40 border-indigo-200/60 dark:border-indigo-800/60">gpt4</code> 映射转发至 <code>gpt-4o-2024-11-20</code>。
               </p>
             </div>
 
-            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-purple-100/80 dark:border-purple-900/40 shadow-xs space-y-0.5">
-              <div className="text-purple-600 dark:text-purple-400 font-semibold text-[11px]">3. 原始模型名直通</div>
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+            <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-lg border border-purple-100/80 dark:border-purple-900/40 shadow-xs space-y-1">
+              <div className="text-purple-600 dark:text-purple-400 font-bold text-xs">3. 原始模型名直通</div>
+              <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
                 <strong>第二优先级</strong>：若无别名则直连 <strong>上游模型名 (Model ID)</strong>，且要求模型与 Provider 均处于启用状态。
               </p>
             </div>
 
-            <div className="p-2.5 bg-white/80 dark:bg-slate-900/70 rounded-lg border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-0.5">
-              <div className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">4. 故障自动降级 (Fallback)</div>
-              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                上游遇 <code>5xx/429/超时</code> 时，网关<strong>秒级自动重试配置的备用模型</strong>，业务零中断。
+            <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-lg border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-1">
+              <div className="text-amber-600 dark:text-amber-400 font-bold text-xs">4. 故障自动降级 (Fallback)</div>
+              <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+                上游遇 <code className="font-semibold text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 border-amber-200/60 dark:border-amber-800/60">5xx/429/超时</code> 时，网关<strong>秒级自动重试配置的备用模型</strong>，业务零中断。
               </p>
             </div>
           </div>
@@ -1110,16 +1110,15 @@ wire_specification = "openai"
           <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
               {exportFormat === "catalog" && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs py-1 px-2.5 h-auto"
+                <button
+                  type="button"
                   onClick={handleDownloadCatalog}
                   disabled={downloadingCatalog}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-sm transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <IconDownload />
+                  <IconDownload className="w-3.5 h-3.5" />
                   <span>{downloadingCatalog ? "下载中…" : "下载 JSON 文件"}</span>
-                </Button>
+                </button>
               )}
               <CopyButton
                 text={
@@ -1132,6 +1131,7 @@ wire_specification = "openai"
                     : modelListText
                 }
                 label="复制内容"
+                className="bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-100 border border-slate-700/80 px-2.5 py-1.5 rounded-lg shadow-sm"
               />
             </div>
             <pre className="whitespace-pre overflow-x-auto leading-relaxed">
