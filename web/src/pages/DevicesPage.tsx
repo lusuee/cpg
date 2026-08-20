@@ -97,10 +97,10 @@ export default function DevicesPage() {
   if (loading && !items.length) return <Spinner text="正在加载设备 Token 列表…" />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">设备与客户端 Token</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">设备与客户端 Token</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             为不同客户端（如 Cursor、VS Code 插件、本地脚本、手机）签发独立的鉴权 Token 与速率限制
           </p>
@@ -112,84 +112,86 @@ export default function DevicesPage() {
             setRateLimitRpm("0");
             setShowCreate(true);
           }}
-          className="shadow-sm"
+          className="shadow-sm w-full sm:w-auto"
         >
           <IconPlus />
           <span>签发新设备 Token</span>
         </Button>
       </div>
 
-      <Card className="overflow-x-auto">
+      <Card>
         {items.length ? (
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
-                <th className="pb-3 px-2">设备名称</th>
-                <th className="pb-3 px-2">当前状态</th>
-                <th className="pb-3 px-2">每分钟限流 (RPM)</th>
-                <th className="pb-3 px-2">最近活跃时间</th>
-                <th className="pb-3 px-2">创建时间</th>
-                <th className="pb-3 px-2 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {items.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
-                  <td className="py-3 px-2">
-                    <div className="font-semibold text-slate-900 dark:text-slate-100">{d.name}</div>
-                    <div className="font-mono text-[11px] text-slate-400 dark:text-slate-500">ID: {d.id}</div>
-                  </td>
-                  <td className="py-3 px-2">
-                    {d.revoked_at ? (
-                      <Badge tone="red" dot>
-                        已撤销
-                      </Badge>
-                    ) : d.enabled ? (
-                      <Badge tone="green" dot>
-                        正常
-                      </Badge>
-                    ) : (
-                      <Badge tone="slate" dot>
-                        已暂停
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 font-mono text-xs">
-                    {d.rate_limit_rpm ? (
-                      <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
-                    ) : (
-                      <span className="text-slate-400 dark:text-slate-500">无限制</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-slate-600 dark:text-slate-400 text-xs">{fmtTime(d.last_used_at)}</td>
-                  <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs">{fmtTime(d.created_at)}</td>
-                  <td className="py-3 px-2 text-right">
-                    {!d.revoked_at ? (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(d)}>
-                          <IconEdit />
-                          <span>编辑</span>
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => onToggle(d)}>
-                          {d.enabled ? "暂停" : "恢复"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                          onClick={() => onRevoke(d)}
-                        >
-                          撤销
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 dark:text-slate-500 text-xs italic">不可用</span>
-                    )}
-                  </td>
+          <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
+            <table className="w-full text-left text-xs sm:text-sm min-w-[600px]">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
+                  <th className="pb-3 px-3 whitespace-nowrap">设备名称</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">当前状态</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">每分钟限流 (RPM)</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">最近活跃时间</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">创建时间</th>
+                  <th className="pb-3 px-3 text-right whitespace-nowrap">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {items.map((d) => (
+                  <tr key={d.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="py-3 px-3">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">{d.name}</div>
+                      <div className="font-mono text-[11px] text-slate-400 dark:text-slate-500">ID: {d.id}</div>
+                    </td>
+                    <td className="py-3 px-2 whitespace-nowrap">
+                      {d.revoked_at ? (
+                        <Badge tone="red" dot>
+                          已撤销
+                        </Badge>
+                      ) : d.enabled ? (
+                        <Badge tone="green" dot>
+                          正常
+                        </Badge>
+                      ) : (
+                        <Badge tone="slate" dot>
+                          已暂停
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="py-3 px-2 font-mono text-xs whitespace-nowrap">
+                      {d.rate_limit_rpm ? (
+                        <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500">无限制</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">{fmtTime(d.last_used_at)}</td>
+                    <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">{fmtTime(d.created_at)}</td>
+                    <td className="py-3 px-3 text-right whitespace-nowrap">
+                      {!d.revoked_at ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(d)}>
+                            <IconEdit />
+                            <span>编辑</span>
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => onToggle(d)}>
+                            {d.enabled ? "暂停" : "恢复"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            onClick={() => onRevoke(d)}
+                          >
+                            撤销
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500 text-xs italic">不可用</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <Empty text="尚未签发任何设备 Token" icon={<IconDevices className="w-8 h-8" />} />
         )}

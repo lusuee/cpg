@@ -97,13 +97,13 @@ console.log(res.choices[0].message.content);`;
   }'`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">系统设置与接入指引</h2>
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">系统设置与接入指引</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">查看网关全局环境配置、服务商运行概览及客户端接入代码示例</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Gateway Meta */}
         <Card title="网关配置概览" className="lg:col-span-1">
           <dl className="space-y-3.5 text-xs">
@@ -114,7 +114,7 @@ console.log(res.choices[0].message.content);`;
             <div>
               <dt className="text-slate-400 dark:text-slate-500 font-medium">Gateway Base URL</dt>
               <dd className="font-mono text-blue-700 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/50 p-2 rounded-lg break-all mt-1 flex items-center justify-between gap-1">
-                <span>{baseUrl}</span>
+                <span className="text-xs">{baseUrl}</span>
                 <CopyButton text={baseUrl} />
               </dd>
             </div>
@@ -126,7 +126,7 @@ console.log(res.choices[0].message.content);`;
               <dt className="text-slate-400 dark:text-slate-500 font-medium">Cloudflare Access 零信任</dt>
               <dd className="mt-0.5 flex items-center gap-1.5">
                 <Badge tone={data?.cf_access_configured ? "green" : "slate"} dot>
-                  {data?.cf_access_configured ? "已配置邮箱白名单" : "未开启（密码登录）"}
+                  {data?.cf_access_configured ? "已配置白名单" : "未开启（密码登录）"}
                 </Badge>
               </dd>
             </div>
@@ -134,7 +134,7 @@ console.log(res.choices[0].message.content);`;
               <dt className="text-slate-400 dark:text-slate-500 font-medium">KV 响应缓存加速</dt>
               <dd className="mt-0.5 flex items-center gap-1.5">
                 <Badge tone={data?.kv_cache_configured ? "green" : "blue"} dot>
-                  {data?.kv_cache_configured ? "Cloudflare KV 已就绪" : "内存加速 / KV 可选绑定"}
+                  {data?.kv_cache_configured ? "Cloudflare KV 已就绪" : "内存加速 / KV 可选"}
                 </Badge>
               </dd>
             </div>
@@ -151,34 +151,36 @@ console.log(res.choices[0].message.content);`;
         {/* Provider Overview */}
         <Card title="Provider 运行状态" className="lg:col-span-2">
           {data?.providers?.length ? (
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
-                  <th className="pb-2.5 px-2">Provider</th>
-                  <th className="pb-2.5 px-2">协议类型</th>
-                  <th className="pb-2.5 px-2">服务状态</th>
-                  <th className="pb-2.5 px-2">密钥状态</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {data.providers.map((p) => (
-                  <tr key={p.id}>
-                    <td className="py-2.5 px-2 font-medium text-slate-900 dark:text-slate-100">{p.name}</td>
-                    <td className="py-2.5 px-2 text-slate-600 dark:text-slate-400 uppercase text-[11px]">{p.type}</td>
-                    <td className="py-2.5 px-2">
-                      <Badge tone={p.enabled ? "green" : "slate"} dot>
-                        {p.enabled ? "启用" : "停用"}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-2">
-                      <Badge tone={p.api_key_configured || p.secret_configured ? "green" : "red"} dot>
-                        {p.api_key_configured || p.secret_configured ? "密钥正常" : "未配置密钥"}
-                      </Badge>
-                    </td>
+            <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
+              <table className="w-full text-left text-xs min-w-[420px]">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
+                    <th className="pb-2.5 px-3 whitespace-nowrap">Provider</th>
+                    <th className="pb-2.5 px-2 whitespace-nowrap">协议类型</th>
+                    <th className="pb-2.5 px-2 whitespace-nowrap">服务状态</th>
+                    <th className="pb-2.5 px-3 whitespace-nowrap">密钥状态</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.providers.map((p) => (
+                    <tr key={p.id}>
+                      <td className="py-2.5 px-3 font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">{p.name}</td>
+                      <td className="py-2.5 px-2 text-slate-600 dark:text-slate-400 uppercase text-[11px] whitespace-nowrap">{p.type}</td>
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <Badge tone={p.enabled ? "green" : "slate"} dot>
+                          {p.enabled ? "启用" : "停用"}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <Badge tone={p.api_key_configured || p.secret_configured ? "green" : "red"} dot>
+                          {p.api_key_configured || p.secret_configured ? "密钥正常" : "未配置密钥"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <Empty text="暂无 Provider 配置" />
           )}
@@ -202,7 +204,7 @@ console.log(res.choices[0].message.content);`;
           <button
             onClick={handlePurgeCache}
             disabled={purging}
-            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm disabled:opacity-50"
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm disabled:opacity-50 cursor-pointer shrink-0"
           >
             <IconTrash className="w-3.5 h-3.5 text-rose-500" />
             <span>{purging ? "正在清理…" : "一键清空网关缓存"}</span>
@@ -213,10 +215,10 @@ console.log(res.choices[0].message.content);`;
       {/* Integration Code Examples */}
       <Card title="客户端接入指南 (SDK Code Snippets)">
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 overflow-x-auto whitespace-nowrap">
             <button
               onClick={() => setActiveTab("openai")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 activeTab === "openai" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
@@ -224,7 +226,7 @@ console.log(res.choices[0].message.content);`;
             </button>
             <button
               onClick={() => setActiveTab("anthropic")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 activeTab === "anthropic" ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
@@ -232,7 +234,7 @@ console.log(res.choices[0].message.content);`;
             </button>
             <button
               onClick={() => setActiveTab("gemini")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 activeTab === "gemini" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
@@ -240,7 +242,7 @@ console.log(res.choices[0].message.content);`;
             </button>
             <button
               onClick={() => setActiveTab("curl")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 activeTab === "curl" ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
@@ -248,8 +250,8 @@ console.log(res.choices[0].message.content);`;
             </button>
           </div>
 
-          <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto">
-            <div className="absolute top-3 right-3">
+          <div className="rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-3.5 sm:p-4 text-xs font-mono text-slate-200">
+            <div className="flex items-center justify-end mb-2">
               <CopyButton
                 text={
                   activeTab === "openai"
@@ -261,6 +263,7 @@ console.log(res.choices[0].message.content);`;
                     : curlCode
                 }
                 label="复制代码"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded-lg text-xs"
               />
             </div>
             <pre className="whitespace-pre overflow-x-auto leading-relaxed">

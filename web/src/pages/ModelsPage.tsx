@@ -456,24 +456,24 @@ wire_specification = "openai"
   if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">模型路由映射</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">模型路由映射</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             配置允许客户端调用的模型、上游 Provider 绑定以及自定义别名（Alias）
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setShowExport(true)} disabled={!items.length} className="shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button variant="outline" size="sm" onClick={() => setShowExport(true)} disabled={!items.length} className="shadow-sm flex-1 sm:flex-initial">
             <IconTerminal />
-            <span>客户端配置 / 导出</span>
+            <span>客户端导出</span>
           </Button>
-          <Button variant="outline" onClick={openSync} disabled={!providers.length} className="shadow-sm">
+          <Button variant="outline" size="sm" onClick={openSync} disabled={!providers.length} className="shadow-sm flex-1 sm:flex-initial">
             <IconRefresh />
-            <span>从上游拉取并导入</span>
+            <span>从上游拉取</span>
           </Button>
-          <Button onClick={openCreate} disabled={!providers.length} className="shadow-sm">
+          <Button size="sm" onClick={openCreate} disabled={!providers.length} className="shadow-sm w-full sm:w-auto">
             <IconPlus />
             <span>新增 Model</span>
           </Button>
@@ -491,11 +491,11 @@ wire_specification = "openai"
             <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium flex-wrap">
               <span className="px-2 py-0.5 rounded bg-blue-100/80 dark:bg-blue-900/50 text-blue-900 dark:text-blue-200 font-semibold font-mono">1. 请求 Model</span>
               <span className="text-slate-400">→</span>
-              <span className="px-2 py-0.5 rounded bg-indigo-100/80 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-200 font-semibold font-mono">2. 别名优先 (Alias)</span>
+              <span className="px-2 py-0.5 rounded bg-indigo-100/80 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-200 font-semibold font-mono">2. 别名优先</span>
               <span className="text-slate-400">→</span>
-              <span className="px-2 py-0.5 rounded bg-purple-100/80 dark:bg-purple-900/50 text-purple-900 dark:text-purple-200 font-semibold font-mono">3. 原始 Model 直通</span>
+              <span className="px-2 py-0.5 rounded bg-purple-100/80 dark:bg-purple-900/50 text-purple-900 dark:text-purple-200 font-semibold font-mono">3. 原始直通</span>
               <span className="text-slate-400">→</span>
-              <span className="px-2 py-0.5 rounded bg-amber-100/80 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-semibold font-mono">4. 故障降级 (Fallback)</span>
+              <span className="px-2 py-0.5 rounded bg-amber-100/80 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-semibold font-mono">4. 故障降级</span>
             </div>
           </div>
 
@@ -535,7 +535,7 @@ wire_specification = "openai"
             <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-lg border border-amber-100/80 dark:border-amber-900/40 shadow-xs space-y-1">
               <div className="text-amber-600 dark:text-amber-400 font-bold text-xs">4. 故障自动降级 (Fallback)</div>
               <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
-                上游遇 <code className="font-semibold text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 border-amber-200/60 dark:border-amber-800/60">5xx/429/超时</code> 时，网关<strong>秒级自动重试配置的备用模型</strong>，业务零中断。
+                上游遇 <code className="font-semibold text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 border-amber-200/60 dark:border-amber-800/60">5xx/429/超时</code> 时，网关<strong>秒级自动重试配置的备用模型</strong>。
               </p>
             </div>
           </div>
@@ -549,14 +549,14 @@ wire_specification = "openai"
       ) : null}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           <div className="relative w-full sm:w-64">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
               <IconSearch />
             </div>
             <Input
               className="pl-9"
-              placeholder="搜索模型名 / 显示名 / 别名…"
+              placeholder="搜索模型 / 别名…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -579,18 +579,18 @@ wire_specification = "openai"
 
         {/* Floating / Inline Batch Operations Toolbar */}
         {selectedIds.size > 0 ? (
-          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
-            <span className="font-semibold text-blue-900 dark:text-blue-300">已选中 {selectedIds.size} 项</span>
-            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1" />
+          <div className="flex flex-wrap items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200 w-full sm:w-auto">
+            <span className="font-semibold text-blue-900 dark:text-blue-300">已选 {selectedIds.size} 项</span>
+            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1 hidden sm:block" />
             <Button
               size="sm"
               variant="outline"
               disabled={batchOperating}
               onClick={() => handleBatchEnable(true)}
-              className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-none"
+              className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-none"
             >
               <IconCheck />
-              <span>批量启用</span>
+              <span>启用</span>
             </Button>
             <Button
               size="sm"
@@ -599,7 +599,7 @@ wire_specification = "openai"
               onClick={() => handleBatchEnable(false)}
               className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
             >
-              <span>批量停用</span>
+              <span>停用</span>
             </Button>
             <Button
               size="sm"
@@ -628,11 +628,11 @@ wire_specification = "openai"
               className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
             >
               <IconTrash />
-              <span>批量删除</span>
+              <span>删除</span>
             </Button>
             <button
               onClick={() => setSelectedIds(new Set())}
-              className="ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
+              className="ml-auto sm:ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
             >
               取消
             </button>
@@ -640,129 +640,131 @@ wire_specification = "openai"
         ) : null}
       </div>
 
-      <Card className="overflow-x-auto">
+      <Card>
         {filteredItems.length ? (
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
-                <th className="pb-3 px-2 w-8">
-                  <input
-                    type="checkbox"
-                    checked={isAllFilteredSelected}
-                    onChange={toggleSelectAll}
-                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
-                  />
-                </th>
-                <th className="pb-3 px-2">上游模型名</th>
-                <th className="pb-3 px-2">显示名称</th>
-                <th className="pb-3 px-2">客户端别名</th>
-                <th className="pb-3 px-2">绑定 Provider</th>
-                <th className="pb-3 px-2">1M 定价 (入/出)</th>
-                <th className="pb-3 px-2">故障备用</th>
-                <th className="pb-3 px-2">响应缓存</th>
-                <th className="pb-3 px-2">状态</th>
-                <th className="pb-3 px-2 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredItems.map((m) => {
-                const isSelected = selectedIds.has(m.id);
-                const fallbackModel = m.fallback_model_id ? items.find((x) => x.id === m.fallback_model_id) : null;
-                return (
-                  <tr
-                    key={m.id}
-                    className={`transition-colors ${isSelected ? "bg-blue-50/50 dark:bg-blue-950/40" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/50"}`}
-                  >
-                    <td className="py-3 px-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelectRow(m.id)}
-                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
-                      />
-                    </td>
-                    <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100">{m.model_name}</td>
-                    <td className="py-3 px-2 text-slate-700 dark:text-slate-300">{m.display_name || "-"}</td>
-                    <td className="py-3 px-2">
-                      {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400 dark:text-slate-500">-</span>}
-                    </td>
-                    <td className="py-3 px-2 text-slate-600 dark:text-slate-400 font-medium">
-                      {m.provider_name || <span className="font-mono text-xs text-slate-400 dark:text-slate-500">{m.provider_id}</span>}
-                    </td>
-                    <td className="py-3 px-2 font-mono text-xs text-slate-600 dark:text-slate-400">
-                      {m.input_price_per_m || m.output_price_per_m ? (
-                        <span>
-                          ${m.input_price_per_m || 0} / ${m.output_price_per_m || 0}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      {fallbackModel ? (
-                        <Badge tone="amber" className="max-w-[120px] truncate" title={`降级至: ${fallbackModel.model_name}`}>
-                          {fallbackModel.alias || fallbackModel.model_name}
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      <button
-                        type="button"
-                        onClick={() => onToggleCache(m)}
-                        title="点击快速切换该模型的响应缓存"
-                        className="cursor-pointer group"
-                      >
-                        {m.cache_enabled ? (
-                          <Badge tone="purple" className="group-hover:opacity-80 transition-opacity" title="响应缓存已开启，点击可关闭">
-                            ⚡ {m.cache_ttl || 3600}s
+          <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
+            <table className="w-full text-left text-xs sm:text-sm min-w-[760px]">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
+                  <th className="pb-3 px-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={isAllFilteredSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                    />
+                  </th>
+                  <th className="pb-3 px-2 whitespace-nowrap">上游模型名</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">显示名称</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">客户端别名</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">绑定 Provider</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">1M 定价 (入/出)</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">故障备用</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">响应缓存</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">状态</th>
+                  <th className="pb-3 px-3 text-right whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredItems.map((m) => {
+                  const isSelected = selectedIds.has(m.id);
+                  const fallbackModel = m.fallback_model_id ? items.find((x) => x.id === m.fallback_model_id) : null;
+                  return (
+                    <tr
+                      key={m.id}
+                      className={`transition-colors ${isSelected ? "bg-blue-50/50 dark:bg-blue-950/40" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/50"}`}
+                    >
+                      <td className="py-3 px-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectRow(m.id)}
+                          className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                        />
+                      </td>
+                      <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">{m.model_name}</td>
+                      <td className="py-3 px-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">{m.display_name || "-"}</td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400 dark:text-slate-500">-</span>}
+                      </td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                        {m.provider_name || <span className="font-mono text-xs text-slate-400 dark:text-slate-500">{m.provider_id}</span>}
+                      </td>
+                      <td className="py-3 px-2 font-mono text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {m.input_price_per_m || m.output_price_per_m ? (
+                          <span>
+                            ${m.input_price_per_m || 0} / ${m.output_price_per_m || 0}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {fallbackModel ? (
+                          <Badge tone="amber" className="max-w-[120px] truncate" title={`降级至: ${fallbackModel.model_name}`}>
+                            {fallbackModel.alias || fallbackModel.model_name}
                           </Badge>
                         ) : (
-                          <Badge tone="slate" className="group-hover:opacity-80 transition-opacity" title="响应缓存未开启，点击可开启">
-                            未开启
-                          </Badge>
+                          <span className="text-slate-400 dark:text-slate-500">-</span>
                         )}
-                      </button>
-                    </td>
-                    <td className="py-3 px-2">
-                      <button
-                        type="button"
-                        onClick={() => onToggleSingle(m)}
-                        title="点击快速切换启用/停用状态"
-                        className="cursor-pointer group"
-                      >
-                        <Badge
-                          tone={m.enabled ? "green" : "slate"}
-                          dot
-                          className="group-hover:opacity-80 transition-opacity"
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => onToggleCache(m)}
+                          title="点击快速切换该模型的响应缓存"
+                          className="cursor-pointer group"
                         >
-                          {m.enabled ? "启用" : "已停用"}
-                        </Badge>
-                      </button>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(m)}>
-                          <IconEdit />
-                          <span>编辑</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                          onClick={() => onDelete(m)}
+                          {m.cache_enabled ? (
+                            <Badge tone="purple" className="group-hover:opacity-80 transition-opacity" title="响应缓存已开启，点击可关闭">
+                              ⚡ {m.cache_ttl || 3600}s
+                            </Badge>
+                          ) : (
+                            <Badge tone="slate" className="group-hover:opacity-80 transition-opacity" title="响应缓存未开启，点击可开启">
+                              未开启
+                            </Badge>
+                          )}
+                        </button>
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => onToggleSingle(m)}
+                          title="点击快速切换启用/停用状态"
+                          className="cursor-pointer group"
                         >
-                          <IconTrash />
-                          <span>删除</span>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <Badge
+                            tone={m.enabled ? "green" : "slate"}
+                            dot
+                            className="group-hover:opacity-80 transition-opacity"
+                          >
+                            {m.enabled ? "启用" : "已停用"}
+                          </Badge>
+                        </button>
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(m)}>
+                            <IconEdit />
+                            <span>编辑</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            onClick={() => onDelete(m)}
+                          >
+                            <IconTrash />
+                            <span>删除</span>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <Empty text="未找到匹配的模型" icon={<IconModels className="w-8 h-8" />} />
         )}
@@ -778,7 +780,7 @@ wire_specification = "openai"
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">选择上游 Provider</label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Select
                 value={syncProviderId}
                 onChange={(e) => {
@@ -797,6 +799,7 @@ wire_specification = "openai"
                 variant="primary"
                 onClick={() => handleFetchFromUpstream(syncProviderId)}
                 disabled={syncLoading || !syncProviderId}
+                className="shrink-0"
               >
                 {syncLoading ? "正在拉取…" : "获取可用模型"}
               </Button>
@@ -911,7 +914,7 @@ wire_specification = "openai"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">显示名称（可选）</label>
               <Input
@@ -949,7 +952,7 @@ wire_specification = "openai"
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 输入定价 ($ / 1M Tokens)
@@ -1064,20 +1067,20 @@ wire_specification = "openai"
             将网关 Base URL 和当前已启用的 {activeModels.length} 个模型快速复制到 Codex、Continue、Cursor 或各类 AI 开发工具中。
           </p>
 
-          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 overflow-x-auto whitespace-nowrap">
             <button
               onClick={() => setExportFormat("catalog")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
                 exportFormat === "catalog"
                   ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400"
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
               }`}
             >
-              <span>⚡ model-catalog.json (Codex 推荐)</span>
+              <span>⚡ model-catalog.json (Codex)</span>
             </button>
             <button
               onClick={() => setExportFormat("toml")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 exportFormat === "toml"
                   ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400"
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -1087,7 +1090,7 @@ wire_specification = "openai"
             </button>
             <button
               onClick={() => setExportFormat("continue")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 exportFormat === "continue"
                   ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400"
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -1097,7 +1100,7 @@ wire_specification = "openai"
             </button>
             <button
               onClick={() => setExportFormat("list")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 exportFormat === "list"
                   ? "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -1108,7 +1111,7 @@ wire_specification = "openai"
           </div>
 
           <div className="relative rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-slate-200 overflow-x-auto max-h-72">
-            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2 mb-3">
               {exportFormat === "catalog" && (
                 <button
                   type="button"
@@ -1152,7 +1155,7 @@ wire_specification = "openai"
               </div>
               <p>1. 点击上方「下载 JSON 文件」保存为 <code>~/.codex/model-catalog.json</code>。</p>
               <p>2. 在 <code>~/.codex/config.toml</code> 中添加：<code>model_catalog_json = "/绝对路径/.codex/model-catalog.json"</code>。</p>
-              <p>3. 重启 Codex，即可在 <code>/model</code> 选择器中直接使用网关配置的所有已启用模型（包含上下文窗口与推理等级配置）。</p>
+              <p>3. 重启 Codex，即可在 <code>/model</code> 选择器中直接使用网关配置的所有已启用模型。</p>
             </div>
           ) : exportFormat === "toml" ? (
             <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl text-xs text-indigo-800 dark:text-indigo-300 space-y-1">

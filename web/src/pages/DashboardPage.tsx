@@ -45,26 +45,26 @@ export default function DashboardPage() {
   const trend = stats.d7?.trend || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Quick Gateway Endpoint Widget */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-lg shadow-blue-500/15 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-white/10 backdrop-blur-md">
-            <IconTerminal className="w-5 h-5 text-white" />
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-lg shadow-blue-500/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-white/10 backdrop-blur-md shrink-0">
+            <IconTerminal className="w-4 h-4 sm:w-5 h-5 text-white" />
           </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider font-semibold text-blue-100">网关接入地址</div>
-            <div className="font-mono text-sm sm:text-base font-semibold text-white mt-0.5">{gatewayUrl || "https://ai.example.com"}</div>
+          <div className="min-w-0">
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-blue-100">网关接入地址</div>
+            <div className="font-mono text-xs sm:text-base font-semibold text-white mt-0.5 break-all">{gatewayUrl || "https://ai.example.com"}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs">
-          <span className="text-blue-100">OpenAI & Anthropic 兼容</span>
+        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs shrink-0">
+          <span className="text-blue-100 text-[11px] sm:text-xs">OpenAI & Anthropic 兼容</span>
           <CopyButton text={gatewayUrl || window.location.origin} label="复制 Base URL" />
         </div>
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-4">
         <StatCard
           label="今日总请求"
           value={fmtNum(t.request_count)}
@@ -74,7 +74,7 @@ export default function DashboardPage() {
         <StatCard
           label="缓存命中率"
           value={t.request_count ? `${(((t.cache_hit_count || 0) / t.request_count) * 100).toFixed(1)}%` : "0.0%"}
-          sub={t.cache_hit_count ? `命中 ${fmtNum(t.cache_hit_count)} 次 (极速响应)` : "暂无命中"}
+          sub={t.cache_hit_count ? `命中 ${fmtNum(t.cache_hit_count)} 次` : "暂无命中"}
           tone="purple"
         />
         <StatCard
@@ -104,15 +104,15 @@ export default function DashboardPage() {
       </div>
 
       {/* Trend & Providers */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         <Card title="最近 7 天请求量趋势">
           {trend.length ? (
-            <div className="pt-2">
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <div className="pt-2 -ml-3 sm:ml-0">
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={trend} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#334155" : "#f1f5f9"} />
-                  <XAxis dataKey="date" fontSize={11} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} />
-                  <YAxis allowDecimals={false} fontSize={11} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="date" fontSize={10} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} />
+                  <YAxis allowDecimals={false} fontSize={10} stroke={isDark ? "#64748b" : "#94a3b8"} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: isDark ? "#0f172a" : "#1e293b",
@@ -139,7 +139,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Models & Recent Requests */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         <Card title="今日 Model 使用分布">
           <BreakdownTable rows={modelRows} />
         </Card>
@@ -149,7 +149,7 @@ export default function DashboardPage() {
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {recent.map((u) => (
                 <div key={u.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
                     <Badge
                       tone={u.status_code && u.status_code >= 400 ? "red" : u.status_code ? "green" : "slate"}
                       dot
@@ -161,14 +161,14 @@ export default function DashboardPage() {
                         ⚡ HIT
                       </Badge>
                     ) : null}
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[140px] sm:max-w-[200px]">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[100px] xs:max-w-[140px] sm:max-w-[200px]">
                       {u.model || "-"}
                     </span>
-                    <span className="text-slate-400 dark:text-slate-500 text-[11px] truncate">{u.provider_name || "-"}</span>
+                    <span className="text-slate-400 dark:text-slate-500 text-[11px] truncate hidden sm:inline">{u.provider_name || "-"}</span>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     <span className="font-mono text-slate-500 dark:text-slate-400">{fmtNum(u.total_tokens)} T</span>
-                    <span className="text-slate-400 dark:text-slate-500">{fmtTime(u.created_at).slice(11)}</span>
+                    <span className="text-slate-400 dark:text-slate-500 text-[11px]">{fmtTime(u.created_at).slice(11)}</span>
                   </div>
                 </div>
               ))}
@@ -202,10 +202,10 @@ function StatCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-all hover:shadow-md">
-      <div className="text-xs font-medium text-slate-400 dark:text-slate-500">{label}</div>
-      <div className={`mt-2 text-2xl sm:text-3xl font-bold tracking-tight ${toneBg[tone]}`}>{value}</div>
-      <div className="mt-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">{sub}</div>
+    <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 sm:p-5 shadow-xs sm:shadow-sm transition-all hover:shadow-md">
+      <div className="text-[11px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 truncate">{label}</div>
+      <div className={`mt-1.5 sm:mt-2 text-lg sm:text-2xl lg:text-3xl font-bold tracking-tight truncate ${toneBg[tone]}`}>{value}</div>
+      <div className="mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">{sub}</div>
     </div>
   );
 }
@@ -219,9 +219,9 @@ function BreakdownTable({ rows }: { rows: Array<{ name: string; requests: number
     <div className="divide-y divide-slate-100 dark:divide-slate-800">
       {rows.map((r) => (
         <div key={r.name} className="py-2.5">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{r.name}</span>
-            <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+          <div className="flex items-center justify-between text-xs mb-1 gap-2">
+            <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[140px] sm:max-w-[200px]">{r.name}</span>
+            <div className="flex items-center gap-2 sm:gap-3 text-slate-500 dark:text-slate-400 font-mono text-[11px] shrink-0">
               <span>{fmtNum(r.requests)} 次</span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">{fmtNum(r.tokens)} Tokens</span>
             </div>

@@ -197,29 +197,29 @@ export default function ProvidersPage() {
   if (loading && !items.length) return <Spinner text="正在加载 Provider 列表…" />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">上游 Provider 管理</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">上游 Provider 管理</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址（直接保存至数据库，即刻生效）
+            配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址
           </p>
         </div>
-        <Button onClick={openCreate} className="shadow-sm">
+        <Button onClick={openCreate} className="shadow-sm w-full sm:w-auto">
           <IconPlus />
           <span>新增 Provider</span>
         </Button>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           <div className="relative w-full sm:w-64">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
               <IconSearch />
             </div>
             <Input
               className="pl-9"
-              placeholder="搜索 Provider 名称 / Endpoint / 协议…"
+              placeholder="搜索 Provider / Endpoint…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -240,9 +240,9 @@ export default function ProvidersPage() {
 
         {/* Floating / Inline Batch Operations Toolbar */}
         {selectedIds.size > 0 ? (
-          <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="flex flex-wrap items-center gap-2 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs animate-in fade-in slide-in-from-top-1 duration-200 w-full sm:w-auto">
             <span className="font-semibold text-blue-900 dark:text-blue-300">已选 {selectedIds.size} 项</span>
-            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1" />
+            <div className="h-4 w-px bg-blue-200 dark:bg-blue-800 mx-1 hidden sm:block" />
             <Button
               size="sm"
               variant="outline"
@@ -251,7 +251,7 @@ export default function ProvidersPage() {
               className="bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-none"
             >
               <IconCheck />
-              <span>批量启用</span>
+              <span>启用</span>
             </Button>
             <Button
               size="sm"
@@ -260,7 +260,7 @@ export default function ProvidersPage() {
               onClick={() => handleBatchEnable(false)}
               className="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-none"
             >
-              <span>批量停用</span>
+              <span>停用</span>
             </Button>
             <Button
               size="sm"
@@ -270,11 +270,11 @@ export default function ProvidersPage() {
               className="bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 border-rose-200 dark:border-rose-800 shadow-none"
             >
               <IconTrash />
-              <span>批量删除</span>
+              <span>删除</span>
             </Button>
             <button
               onClick={() => setSelectedIds(new Set())}
-              className="ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
+              className="ml-auto sm:ml-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium cursor-pointer"
             >
               取消
             </button>
@@ -282,107 +282,109 @@ export default function ProvidersPage() {
         ) : null}
       </div>
 
-      <Card className="overflow-x-auto">
+      <Card>
         {filteredItems.length ? (
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
-                <th className="pb-3 px-2 w-8">
-                  <input
-                    type="checkbox"
-                    checked={isAllSelected}
-                    onChange={toggleSelectAll}
-                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
-                  />
-                </th>
-                <th className="pb-3 px-2">名称</th>
-                <th className="pb-3 px-2">协议类型</th>
-                <th className="pb-3 px-2">自定义 Endpoint</th>
-                <th className="pb-3 px-2">API 密钥 (Key)</th>
-                <th className="pb-3 px-2">运行状态</th>
-                <th className="pb-3 px-2 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredItems.map((p) => {
-                const isSelected = selectedIds.has(p.id);
-                return (
-                  <tr
-                    key={p.id}
-                    className={`transition-colors ${isSelected ? "bg-blue-50/50 dark:bg-blue-950/40" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/50"}`}
-                  >
-                    <td className="py-3 px-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelectRow(p.id)}
-                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
-                      />
-                    </td>
-                    <td className="py-3 px-2 font-semibold text-slate-900 dark:text-slate-100">{p.name}</td>
-                    <td className="py-3 px-2">
-                      <Badge tone={p.type === "anthropic" ? "purple" : p.type === "gemini" ? "amber" : "blue"}>
-                        {p.type === "anthropic" ? "Anthropic" : p.type === "gemini" ? "Gemini" : "OpenAI"}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-2 font-mono text-slate-500 dark:text-slate-400 text-xs max-w-xs truncate">
-                      {p.endpoint || <span className="text-slate-400 dark:text-slate-500 italic">官方默认</span>}
-                    </td>
-                    <td className="py-3 px-2">
-                      {p.api_key_masked ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{p.api_key_masked}</span>
-                          <Badge tone="green" dot>
-                            数据库已存
-                          </Badge>
-                        </div>
-                      ) : p.secret_name ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{p.secret_name}</span>
-                          <Badge tone={p.secret_configured ? "green" : "red"} dot>
-                            {p.secret_configured ? "CF Secret" : "未绑定"}
-                          </Badge>
-                        </div>
-                      ) : (
-                        <Badge tone="amber" dot>
-                          未配置密钥
+          <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
+            <table className="w-full text-left text-xs sm:text-sm min-w-[600px]">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
+                  <th className="pb-3 px-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                    />
+                  </th>
+                  <th className="pb-3 px-2 whitespace-nowrap">名称</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">协议类型</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">自定义 Endpoint</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">API 密钥 (Key)</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">运行状态</th>
+                  <th className="pb-3 px-3 text-right whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredItems.map((p) => {
+                  const isSelected = selectedIds.has(p.id);
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`transition-colors ${isSelected ? "bg-blue-50/50 dark:bg-blue-950/40" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/50"}`}
+                    >
+                      <td className="py-3 px-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectRow(p.id)}
+                          className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
+                        />
+                      </td>
+                      <td className="py-3 px-2 font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">{p.name}</td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <Badge tone={p.type === "anthropic" ? "purple" : p.type === "gemini" ? "amber" : "blue"}>
+                          {p.type === "anthropic" ? "Anthropic" : p.type === "gemini" ? "Gemini" : "OpenAI"}
                         </Badge>
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      <button
-                        type="button"
-                        onClick={() => onToggleSingle(p)}
-                        title="点击快速切换启用/停用状态"
-                        className="cursor-pointer group"
-                      >
-                        <Badge tone={p.enabled ? "green" : "slate"} dot className="group-hover:opacity-80 transition-opacity">
-                          {p.enabled ? "启用" : "已停用"}
-                        </Badge>
-                      </button>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                          <IconEdit />
-                          <span>编辑</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                          onClick={() => onDelete(p)}
+                      </td>
+                      <td className="py-3 px-2 font-mono text-slate-500 dark:text-slate-400 text-xs max-w-[180px] truncate">
+                        {p.endpoint || <span className="text-slate-400 dark:text-slate-500 italic">官方默认</span>}
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {p.api_key_masked ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{p.api_key_masked}</span>
+                            <Badge tone="green" dot>
+                              已存
+                            </Badge>
+                          </div>
+                        ) : p.secret_name ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{p.secret_name}</span>
+                            <Badge tone={p.secret_configured ? "green" : "red"} dot>
+                              {p.secret_configured ? "Secret" : "未绑"}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <Badge tone="amber" dot>
+                            未配置
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => onToggleSingle(p)}
+                          title="点击快速切换启用/停用状态"
+                          className="cursor-pointer group"
                         >
-                          <IconTrash />
-                          <span>删除</span>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <Badge tone={p.enabled ? "green" : "slate"} dot className="group-hover:opacity-80 transition-opacity">
+                            {p.enabled ? "启用" : "已停用"}
+                          </Badge>
+                        </button>
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
+                            <IconEdit />
+                            <span>编辑</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            onClick={() => onDelete(p)}
+                          >
+                            <IconTrash />
+                            <span>删除</span>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <Empty text={items.length ? "未找到匹配的 Provider" : "尚未添加任何 Provider"} icon={<IconProviders className="w-8 h-8" />} />
         )}

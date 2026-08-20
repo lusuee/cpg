@@ -104,20 +104,20 @@ export default function UsagePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">API 调用与用量日志</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">API 调用与用量日志</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             实时记录每次网关透传请求、消耗的 Token 数、网络延迟与上游响应状态
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exporting}>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={exporting} className="flex-1 sm:flex-initial">
             <IconDownload />
-            <span>{exporting ? "正在导出…" : "导出 CSV"}</span>
+            <span>{exporting ? "导出中…" : "导出 CSV"}</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => refresh()}>
+          <Button variant="outline" size="sm" onClick={() => refresh()} className="flex-1 sm:flex-initial">
             <IconRefresh />
             <span>刷新记录</span>
           </Button>
@@ -126,8 +126,8 @@ export default function UsagePage() {
 
       <Card>
         {/* Filters Bar */}
-        <div className="flex flex-wrap items-center gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="w-40">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="w-full sm:w-40">
             <Select value={range} onChange={(e) => setRange(e.target.value)}>
               <option value="24h">最近 24 小时</option>
               <option value="7d">最近 7 天</option>
@@ -135,7 +135,7 @@ export default function UsagePage() {
               <option value="all">全部历史记录</option>
             </Select>
           </div>
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
               <option value="">全部 Provider</option>
               {providers.map((p) => (
@@ -145,7 +145,7 @@ export default function UsagePage() {
               ))}
             </Select>
           </div>
-          <div className="w-60 relative">
+          <div className="w-full sm:w-60 relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
               <IconSearch />
             </div>
@@ -157,7 +157,7 @@ export default function UsagePage() {
             />
           </div>
           {(range !== "24h" || providerId || model) && (
-            <Button variant="ghost" size="sm" onClick={resetFilters}>
+            <Button variant="ghost" size="sm" onClick={resetFilters} className="self-start sm:self-auto">
               重置筛选
             </Button>
           )}
@@ -169,29 +169,29 @@ export default function UsagePage() {
           <Spinner text="正在获取日志数据…" />
         ) : items.length ? (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs sm:text-sm">
+            <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
+              <table className="w-full text-left text-xs sm:text-sm min-w-[860px]">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
-                    <th className="pb-3 px-2">请求时间</th>
-                    <th className="pb-3 px-2">状态 / 缓存</th>
-                    <th className="pb-3 px-2">模型</th>
-                    <th className="pb-3 px-2">Provider</th>
-                    <th className="pb-3 px-2">设备来源</th>
-                    <th className="pb-3 px-2 text-right">In Tokens</th>
-                    <th className="pb-3 px-2 text-right">Out Tokens</th>
-                    <th className="pb-3 px-2 text-right">总 Tokens</th>
-                    <th className="pb-3 px-2 text-right">预估费用</th>
-                    <th className="pb-3 px-2 text-right">响应延迟</th>
-                    <th className="pb-3 px-2">Request ID</th>
+                    <th className="pb-3 px-3 whitespace-nowrap">请求时间</th>
+                    <th className="pb-3 px-2 whitespace-nowrap">状态 / 缓存</th>
+                    <th className="pb-3 px-2 whitespace-nowrap">模型</th>
+                    <th className="pb-3 px-2 whitespace-nowrap">Provider</th>
+                    <th className="pb-3 px-2 whitespace-nowrap">设备来源</th>
+                    <th className="pb-3 px-2 text-right whitespace-nowrap">In Tokens</th>
+                    <th className="pb-3 px-2 text-right whitespace-nowrap">Out Tokens</th>
+                    <th className="pb-3 px-2 text-right whitespace-nowrap">总 Tokens</th>
+                    <th className="pb-3 px-2 text-right whitespace-nowrap">预估费用</th>
+                    <th className="pb-3 px-2 text-right whitespace-nowrap">响应延迟</th>
+                    <th className="pb-3 px-3 whitespace-nowrap">Request ID</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {items.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="py-3 px-2 text-slate-500 dark:text-slate-400 whitespace-nowrap text-xs">{fmtTime(u.created_at)}</td>
-                      <td className="py-3 px-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                      <td className="py-3 px-3 text-slate-500 dark:text-slate-400 whitespace-nowrap text-xs">{fmtTime(u.created_at)}</td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                           <Badge
                             tone={
                               u.status_code && u.status_code >= 500
@@ -211,17 +211,17 @@ export default function UsagePage() {
                           ) : null}
                         </div>
                       </td>
-                      <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100">{u.model || "-"}</td>
-                      <td className="py-3 px-2 text-slate-600 dark:text-slate-400">{u.provider_name || "-"}</td>
+                      <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">{u.model || "-"}</td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-400 whitespace-nowrap">{u.provider_name || "-"}</td>
                       <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs truncate max-w-[120px]">
                         {u.device_id || "-"}
                       </td>
-                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs">{fmtNum(u.input_tokens)}</td>
-                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs">{fmtNum(u.output_tokens)}</td>
-                      <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{fmtNum(u.input_tokens)}</td>
+                      <td className="py-3 px-2 text-right font-mono text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{fmtNum(u.output_tokens)}</td>
+                      <td className="py-3 px-2 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 text-xs whitespace-nowrap">
                         {fmtNum(u.total_tokens)}
                       </td>
-                      <td className="py-3 px-2 text-right font-mono text-xs font-medium">
+                      <td className="py-3 px-2 text-right font-mono text-xs font-medium whitespace-nowrap">
                         {u.cache_hit ? (
                           <span className="text-emerald-600 dark:text-emerald-400" title="命中缓存，无需向上游计费">
                             $0.0000
@@ -232,7 +232,7 @@ export default function UsagePage() {
                           <span className="text-slate-500 dark:text-slate-400">$0.0000</span>
                         )}
                       </td>
-                      <td className="py-3 px-2 text-right text-xs">
+                      <td className="py-3 px-2 text-right text-xs whitespace-nowrap">
                         {u.latency_ms != null ? (
                           <span
                             className={`font-mono ${
@@ -251,7 +251,7 @@ export default function UsagePage() {
                           <span className="text-slate-400 dark:text-slate-500">-</span>
                         )}
                       </td>
-                      <td className="py-3 px-2">
+                      <td className="py-3 px-3 whitespace-nowrap">
                         {u.request_id ? (
                           <div className="flex items-center gap-1 font-mono text-[11px] text-slate-400 dark:text-slate-500">
                             <span className="truncate max-w-[100px]">{u.request_id}</span>
