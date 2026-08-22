@@ -118,12 +118,14 @@ export const BatchDeleteModelsSchema = z.object({
 export const CreateDeviceSchema = z.object({
   name: z.string().min(1, "设备名称不能为空").max(100),
   rate_limit_rpm: z.number().int().min(0).optional().default(0),
+  cost_limit_monthly: z.number().min(0).optional().default(0),
 });
 
 export const UpdateDeviceSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
   rate_limit_rpm: z.number().int().min(0).optional(),
+  cost_limit_monthly: z.number().min(0).optional(),
 });
 
 // Usage Schemas

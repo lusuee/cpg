@@ -35,6 +35,7 @@ export const INIT_STATEMENTS = [
     token_hash TEXT NOT NULL UNIQUE,
     enabled INTEGER NOT NULL DEFAULT 1,
     rate_limit_rpm INTEGER NOT NULL DEFAULT 0,
+    cost_limit_monthly REAL NOT NULL DEFAULT 0,
     last_used_at INTEGER,
     created_at INTEGER,
     revoked_at INTEGER
@@ -94,6 +95,7 @@ const MIGRATION_ALTERS = [
   "ALTER TABLE models ADD COLUMN cache_enabled INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE models ADD COLUMN cache_ttl INTEGER NOT NULL DEFAULT 3600",
   "ALTER TABLE devices ADD COLUMN rate_limit_rpm INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE devices ADD COLUMN cost_limit_monthly REAL NOT NULL DEFAULT 0",
   "ALTER TABLE usage ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0",
   "ALTER TABLE usage ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE daily_stats ADD COLUMN cache_hit_count INTEGER NOT NULL DEFAULT 0",

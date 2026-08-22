@@ -48,9 +48,11 @@ export interface DeviceRow {
   token_hash: string;
   enabled: number;
   rate_limit_rpm: number;
+  cost_limit_monthly: number | null;
   last_used_at: number | null;
   created_at: number;
   revoked_at: number | null;
+  current_month_cost?: number;
 }
 
 export interface UsageRow {
@@ -98,5 +100,78 @@ export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+}
+
+export interface MonthlyReportBreakdownItem {
+  key: string;
+  name: string;
+  request_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  share_percent: number;
+}
+
+export interface MonthlyReportDailyTrend {
+  date: string;
+  request_count: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface MonthlyReport {
+  month: string; // e.g. "2026-08"
+  start_time: number;
+  end_time: number;
+  total_cost_usd: number;
+  total_requests: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  cache_hit_count: number;
+  cache_saved_tokens: number;
+  cache_saved_cost_usd: number;
+  by_provider: MonthlyReportBreakdownItem[];
+  by_model: MonthlyReportBreakdownItem[];
+  by_device: MonthlyReportBreakdownItem[];
+  daily_trend: MonthlyReportDailyTrend[];
+  mom_growth: {
+    previous_month: string;
+    previous_cost_usd: number;
+    previous_requests: number;
+    cost_growth_percent: number;
+    request_growth_percent: number;
+  };
+}
+
+export interface CostAnomalyAlert {
+  is_anomaly: boolean;
+  spike_date?: string;
+  spike_cost_usd?: number;
+  baseline_avg_usd?: number;
+  spike_ratio?: number;
+  message?: string;
+  top_contributor_model?: string;
+  top_contributor_device?: string;
+}
+
+export interface ModelSpendRankItem {
+  model: string;
+  display_name?: string;
+  request_count: number;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  share_percent: number;
+  avg_cost_per_request: number;
+}
+
+export interface CostAnalytics {
+  range: string;
+  total_cost_usd: number;
+  anomaly_alert: CostAnomalyAlert;
+  model_ranking: ModelSpendRankItem[];
 }
 

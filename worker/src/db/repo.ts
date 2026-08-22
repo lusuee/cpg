@@ -1,4 +1,19 @@
-import type { DailyStatsRow, DeviceRow, Env, ModelWithProvider, ProviderRow, ProviderType, TokenUsage, UsageRow } from "../types";
+import type {
+  DailyStatsRow,
+  DeviceRow,
+  Env,
+  ModelWithProvider,
+  ProviderRow,
+  ProviderType,
+  TokenUsage,
+  UsageRow,
+  MonthlyReport,
+  MonthlyReportBreakdownItem,
+  MonthlyReportDailyTrend,
+  CostAnalytics,
+  CostAnomalyAlert,
+  ModelSpendRankItem,
+} from "../types";
 import { newId, randomUUID } from "../utils/crypto";
 import { ensureSchema } from "./schema";
 
@@ -373,28 +388,60 @@ export async function listPublicModels(env: Env) {
 
 // ---------- Devices ----------
 
-export async function listDevices(env: Env) {
+export async function listDevices(env: Env): Promise<DeviceRow[]> {
   await ensureSchema(env);
-  const res = await env.DB.prepare(
-    "SELECT id, name, enabled, rate_limit_rpm, last_used_at, created_at, revoked_at FROM devices ORDER BY created_at DESC"
-  ).all();
-  return res.results as Array<Record<string, unknown>>;
+  const nowMs = Date.now();
+  const d = new Date(nowMs);
+  const startOfMonth = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+
+  const res = await env.DB.prepare(`
+    SELECT d.id, d.name, d.enabled, d.rate_limit_rpm, COALESCE(d.cost_limit_monthly, 0) as cost_limit_monthly,
+           d.last_used_at, d.created_at, d.revoked_at,
+           COALESCE(SUM(u.cost_usd), 0) as current_month_cost
+    FROM devices d
+    LEFT JOIN usage u ON u.device_id = d.id AND u.created_at >= ?
+    GROUP BY d.id
+    ORDER BY d.created_at DESC
+  `).bind(startOfMonth).all();
+  return (res.results || []) as unknown as DeviceRow[];
 }
 
 export async function getDeviceByHash(env: Env, tokenHash: string) {
   return (await env.DB.prepare("SELECT * FROM devices WHERE token_hash = ?").bind(tokenHash).first<DeviceRow>()) as DeviceRow | null;
 }
 
-export async function createDevice(env: Env, name: string, tokenHash: string, rate_limit_rpm: number = 0) {
+export async function getDeviceMonthlyCost(env: Env, deviceId: string, startOfMonthMs?: number): Promise<number> {
+  await ensureSchema(env);
+  const startMs = startOfMonthMs ?? (() => {
+    const d = new Date();
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  })();
+  const res = await env.DB.prepare(
+    "SELECT COALESCE(SUM(cost_usd), 0) as total_cost FROM usage WHERE device_id = ? AND created_at >= ?"
+  ).bind(deviceId, startMs).first<{ total_cost: number }>();
+  return Number((res?.total_cost || 0).toFixed(4));
+}
+
+export async function createDevice(
+  env: Env,
+  name: string,
+  tokenHash: string,
+  rate_limit_rpm: number = 0,
+  cost_limit_monthly: number = 0
+) {
   const id = newId("dev");
   const t = now();
   await env.DB.prepare(
-    "INSERT INTO devices (id, name, token_hash, enabled, rate_limit_rpm, created_at) VALUES (?, ?, ?, 1, ?, ?)"
-  ).bind(id, name, tokenHash, rate_limit_rpm, t).run();
-  return { id, name, rate_limit_rpm, created_at: t };
+    "INSERT INTO devices (id, name, token_hash, enabled, rate_limit_rpm, cost_limit_monthly, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)"
+  ).bind(id, name, tokenHash, rate_limit_rpm, cost_limit_monthly, t).run();
+  return { id, name, rate_limit_rpm, cost_limit_monthly, created_at: t };
 }
 
-export async function updateDevice(env: Env, id: string, data: { name?: string; enabled?: boolean; rate_limit_rpm?: number }) {
+export async function updateDevice(
+  env: Env,
+  id: string,
+  data: { name?: string; enabled?: boolean; rate_limit_rpm?: number; cost_limit_monthly?: number }
+) {
   const existing = await env.DB.prepare("SELECT * FROM devices WHERE id = ?").bind(id).first<Record<string, any>>();
   if (!existing) return null;
   const next = {
@@ -402,8 +449,11 @@ export async function updateDevice(env: Env, id: string, data: { name?: string; 
     name: data.name ?? existing.name,
     enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
     rate_limit_rpm: data.rate_limit_rpm !== undefined ? data.rate_limit_rpm : (existing.rate_limit_rpm || 0),
+    cost_limit_monthly: data.cost_limit_monthly !== undefined ? data.cost_limit_monthly : (existing.cost_limit_monthly || 0),
   };
-  await env.DB.prepare("UPDATE devices SET name = ?, enabled = ?, rate_limit_rpm = ? WHERE id = ?").bind(next.name, next.enabled, next.rate_limit_rpm, id).run();
+  await env.DB.prepare(
+    "UPDATE devices SET name = ?, enabled = ?, rate_limit_rpm = ?, cost_limit_monthly = ? WHERE id = ?"
+  ).bind(next.name, next.enabled, next.rate_limit_rpm, next.cost_limit_monthly, id).run();
   return next;
 }
 
@@ -691,6 +741,316 @@ export async function getCurrentMonthSpend(env: Env, tzModifier = "+480 minutes"
     WHERE strftime('%Y-%m', datetime(created_at / 1000, 'unixepoch', ?)) = strftime('%Y-%m', 'now', ?)
   `).bind(safeTz, safeTz).first<{ total_cost: number }>();
   return Number((row?.total_cost || 0).toFixed(4));
+}
+
+export async function generateMonthlyReport(
+  env: Env,
+  targetMonth?: string,
+  tzModifier = "+480 minutes"
+): Promise<MonthlyReport> {
+  await ensureSchema(env);
+  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
+
+  const now = new Date();
+  let year = now.getUTCFullYear();
+  let month = now.getUTCMonth() + 1; // 1-12
+
+  if (targetMonth && /^\d{4}-\d{2}$/.test(targetMonth)) {
+    const parts = targetMonth.split("-");
+    year = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10);
+  }
+
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const startTime = Date.UTC(year, month - 1, 1, 0, 0, 0);
+  const nextMonthYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const endTime = Date.UTC(nextMonthYear, nextMonth - 1, 1, 0, 0, 0) - 1;
+
+  const prevMonthYear = month === 1 ? year - 1 : year;
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevMonthStr = `${prevMonthYear}-${String(prevMonth).padStart(2, "0")}`;
+  const prevStartTime = Date.UTC(prevMonthYear, prevMonth - 1, 1, 0, 0, 0);
+  const prevEndTime = startTime - 1;
+
+  // 1. Overall Month Summary
+  const summaryRow = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as total_requests,
+      COALESCE(SUM(cost_usd), 0) as total_cost_usd,
+      COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+      COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+      COALESCE(SUM(total_tokens), 0) as total_tokens,
+      COALESCE(SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END), 0) as cache_hit_count,
+      COALESCE(SUM(CASE WHEN cache_hit = 1 THEN total_tokens ELSE 0 END), 0) as cache_saved_tokens,
+      COALESCE(SUM(CASE WHEN cache_hit = 1 THEN cost_usd ELSE 0 END), 0) as cache_saved_cost_usd
+    FROM usage
+    WHERE created_at >= ? AND created_at <= ?
+  `).bind(startTime, endTime).first<Record<string, any>>();
+
+  const totalCost = Number((summaryRow?.total_cost_usd || 0).toFixed(4));
+  const totalReqs = Number(summaryRow?.total_requests || 0);
+
+  // 2. Previous Month Summary
+  const prevRow = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as prev_requests,
+      COALESCE(SUM(cost_usd), 0) as prev_cost_usd
+    FROM usage
+    WHERE created_at >= ? AND created_at <= ?
+  `).bind(prevStartTime, prevEndTime).first<Record<string, any>>();
+
+  const prevCost = Number((prevRow?.prev_cost_usd || 0).toFixed(4));
+  const prevReqs = Number(prevRow?.prev_requests || 0);
+
+  const costGrowthPercent = prevCost > 0
+    ? Number((((totalCost - prevCost) / prevCost) * 100).toFixed(1))
+    : 0;
+  const reqGrowthPercent = prevReqs > 0
+    ? Number((((totalReqs - prevReqs) / prevReqs) * 100).toFixed(1))
+    : 0;
+
+  // 3. Breakdown by Provider
+  const providerRows = await env.DB.prepare(`
+    SELECT
+      COALESCE(provider_id, 'unknown') as key,
+      COALESCE(provider_name, provider_id, 'Unknown Provider') as name,
+      COUNT(*) as request_count,
+      COALESCE(SUM(input_tokens), 0) as input_tokens,
+      COALESCE(SUM(output_tokens), 0) as output_tokens,
+      COALESCE(SUM(total_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM usage
+    WHERE created_at >= ? AND created_at <= ?
+    GROUP BY key
+    ORDER BY cost_usd DESC
+  `).bind(startTime, endTime).all<Record<string, any>>();
+
+  const byProvider: MonthlyReportBreakdownItem[] = (providerRows.results || []).map((r) => {
+    const c = Number(Number(r.cost_usd || 0).toFixed(4));
+    return {
+      key: String(r.key),
+      name: String(r.name),
+      request_count: Number(r.request_count),
+      input_tokens: Number(r.input_tokens),
+      output_tokens: Number(r.output_tokens),
+      total_tokens: Number(r.total_tokens),
+      cost_usd: c,
+      share_percent: totalCost > 0 ? Number(((c / totalCost) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  // 4. Breakdown by Model
+  const modelRows = await env.DB.prepare(`
+    SELECT
+      COALESCE(model, 'unknown') as key,
+      COALESCE(model, 'Unknown Model') as name,
+      COUNT(*) as request_count,
+      COALESCE(SUM(input_tokens), 0) as input_tokens,
+      COALESCE(SUM(output_tokens), 0) as output_tokens,
+      COALESCE(SUM(total_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM usage
+    WHERE created_at >= ? AND created_at <= ?
+    GROUP BY key
+    ORDER BY cost_usd DESC
+  `).bind(startTime, endTime).all<Record<string, any>>();
+
+  const byModel: MonthlyReportBreakdownItem[] = (modelRows.results || []).map((r) => {
+    const c = Number(Number(r.cost_usd || 0).toFixed(4));
+    return {
+      key: String(r.key),
+      name: String(r.name),
+      request_count: Number(r.request_count),
+      input_tokens: Number(r.input_tokens),
+      output_tokens: Number(r.output_tokens),
+      total_tokens: Number(r.total_tokens),
+      cost_usd: c,
+      share_percent: totalCost > 0 ? Number(((c / totalCost) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  // 5. Breakdown by Device
+  const deviceRows = await env.DB.prepare(`
+    SELECT
+      COALESCE(u.device_id, 'direct') as key,
+      COALESCE(d.name, u.device_id, 'Direct / Anonymous') as name,
+      COUNT(*) as request_count,
+      COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+      COALESCE(SUM(u.output_tokens), 0) as output_tokens,
+      COALESCE(SUM(u.total_tokens), 0) as total_tokens,
+      COALESCE(SUM(u.cost_usd), 0) as cost_usd
+    FROM usage u
+    LEFT JOIN devices d ON d.id = u.device_id
+    WHERE u.created_at >= ? AND u.created_at <= ?
+    GROUP BY key
+    ORDER BY cost_usd DESC
+  `).bind(startTime, endTime).all<Record<string, any>>();
+
+  const byDevice: MonthlyReportBreakdownItem[] = (deviceRows.results || []).map((r) => {
+    const c = Number(Number(r.cost_usd || 0).toFixed(4));
+    return {
+      key: String(r.key),
+      name: String(r.name),
+      request_count: Number(r.request_count),
+      input_tokens: Number(r.input_tokens),
+      output_tokens: Number(r.output_tokens),
+      total_tokens: Number(r.total_tokens),
+      cost_usd: c,
+      share_percent: totalCost > 0 ? Number(((c / totalCost) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  // 6. Daily Trend
+  const trendRows = await env.DB.prepare(`
+    SELECT
+      strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) as date,
+      COUNT(*) as request_count,
+      COALESCE(SUM(total_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM usage
+    WHERE created_at >= ? AND created_at <= ?
+    GROUP BY date
+    ORDER BY date ASC
+  `).bind(safeTz, startTime, endTime).all<Record<string, any>>();
+
+  const dailyTrend: MonthlyReportDailyTrend[] = (trendRows.results || []).map((r) => ({
+    date: String(r.date),
+    request_count: Number(r.request_count),
+    total_tokens: Number(r.total_tokens),
+    cost_usd: Number(Number(r.cost_usd || 0).toFixed(4)),
+  }));
+
+  return {
+    month: monthStr,
+    start_time: startTime,
+    end_time: endTime,
+    total_cost_usd: totalCost,
+    total_requests: totalReqs,
+    total_input_tokens: Number(summaryRow?.total_input_tokens || 0),
+    total_output_tokens: Number(summaryRow?.total_output_tokens || 0),
+    total_tokens: Number(summaryRow?.total_tokens || 0),
+    cache_hit_count: Number(summaryRow?.cache_hit_count || 0),
+    cache_saved_tokens: Number(summaryRow?.cache_saved_tokens || 0),
+    cache_saved_cost_usd: Number(Number(summaryRow?.cache_saved_cost_usd || 0).toFixed(4)),
+    by_provider: byProvider,
+    by_model: byModel,
+    by_device: byDevice,
+    daily_trend: dailyTrend,
+    mom_growth: {
+      previous_month: prevMonthStr,
+      previous_cost_usd: prevCost,
+      previous_requests: prevReqs,
+      cost_growth_percent: costGrowthPercent,
+      request_growth_percent: reqGrowthPercent,
+    },
+  };
+}
+
+export async function statsCostAnalytics(
+  env: Env,
+  since: number,
+  tzModifier = "+480 minutes"
+): Promise<CostAnalytics> {
+  await ensureSchema(env);
+  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
+
+  // 1. Total Cost
+  const totalRow = await env.DB.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) as total_cost
+    FROM usage
+    WHERE created_at >= ?
+  `).bind(since).first<{ total_cost: number }>();
+  const totalCostUsd = Number((totalRow?.total_cost || 0).toFixed(4));
+
+  // 2. Model Spending Ranking
+  const modelRows = await env.DB.prepare(`
+    SELECT
+      COALESCE(m.model, 'unknown') as model,
+      COUNT(*) as request_count,
+      COALESCE(SUM(m.input_tokens), 0) as input_tokens,
+      COALESCE(SUM(m.output_tokens), 0) as output_tokens,
+      COALESCE(SUM(m.total_tokens), 0) as total_tokens,
+      COALESCE(SUM(m.cost_usd), 0) as cost_usd
+    FROM usage m
+    WHERE m.created_at >= ?
+    GROUP BY m.model
+    ORDER BY cost_usd DESC
+  `).bind(since).all<Record<string, any>>();
+
+  const modelRanking: ModelSpendRankItem[] = (modelRows.results || []).map((r) => {
+    const cost = Number(Number(r.cost_usd || 0).toFixed(4));
+    const reqs = Number(r.request_count || 0);
+    return {
+      model: String(r.model),
+      request_count: reqs,
+      input_tokens: Number(r.input_tokens || 0),
+      output_tokens: Number(r.output_tokens || 0),
+      total_tokens: Number(r.total_tokens || 0),
+      cost_usd: cost,
+      share_percent: totalCostUsd > 0 ? Number(((cost / totalCostUsd) * 100).toFixed(1)) : 0,
+      avg_cost_per_request: reqs > 0 ? Number((cost / reqs).toFixed(6)) : 0,
+    };
+  });
+
+  // 3. Anomaly Spike Detection
+  const dailySpendRows = await env.DB.prepare(`
+    SELECT
+      strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) as date,
+      COUNT(*) as request_count,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM usage
+    WHERE created_at >= ?
+    GROUP BY date
+    ORDER BY date ASC
+  `).bind(safeTz, since).all<Record<string, any>>();
+
+  const dailySpends = (dailySpendRows.results || []).map((r) => ({
+    date: String(r.date),
+    cost: Number(r.cost_usd || 0),
+    reqs: Number(r.request_count || 0),
+  }));
+
+  let anomalyAlert: CostAnomalyAlert = { is_anomaly: false };
+
+  if (dailySpends.length >= 2) {
+    const totalDailySpend = dailySpends.reduce((acc, d) => acc + d.cost, 0);
+    const avgDailySpend = totalDailySpend / dailySpends.length;
+
+    for (let i = dailySpends.length - 1; i >= Math.max(0, dailySpends.length - 3); i--) {
+      const day = dailySpends[i];
+      if (day.cost > 0.10 && avgDailySpend > 0 && day.cost >= avgDailySpend * 2.2) {
+        const ratio = Number((day.cost / avgDailySpend).toFixed(1));
+
+        const topModelRow = await env.DB.prepare(`
+          SELECT model, COALESCE(SUM(cost_usd), 0) as model_cost
+          FROM usage
+          WHERE strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) = ?
+          GROUP BY model
+          ORDER BY model_cost DESC
+          LIMIT 1
+        `).bind(safeTz, day.date).first<Record<string, any>>();
+
+        anomalyAlert = {
+          is_anomaly: true,
+          spike_date: day.date,
+          spike_cost_usd: Number(day.cost.toFixed(4)),
+          baseline_avg_usd: Number(avgDailySpend.toFixed(4)),
+          spike_ratio: ratio,
+          top_contributor_model: topModelRow?.model ? String(topModelRow.model) : undefined,
+          message: `${day.date} 消费异常突增 (${ratio}x 均值: $${day.cost.toFixed(2)})，主要由「${topModelRow?.model || "未知模型"}」产生`,
+        };
+        break;
+      }
+    }
+  }
+
+  return {
+    range: "30d",
+    total_cost_usd: totalCostUsd,
+    anomaly_alert: anomalyAlert,
+    model_ranking: modelRanking,
+  };
 }
 
 export function randomRequestId(): string {

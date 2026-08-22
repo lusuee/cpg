@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, UsageRow } from "../types";
+import type { Env, MonthlyReport, UsageRow } from "../types";
 import {
   listUsage,
   statsSummary,
@@ -10,7 +10,10 @@ import {
   getLatestUsage,
   statsCacheAnalytics,
   statsModelLatency,
+  generateMonthlyReport,
+  statsCostAnalytics,
 } from "../db/repo";
+import { sendWebhookNotification } from "../utils/webhook";
 
 export const usageApp = new Hono<{ Bindings: Env }>();
 
@@ -40,7 +43,6 @@ export function startOfToday(offsetDays = 0, tzOffsetMinutes = -480): number {
 }
 
 export function formatSqlTimezoneModifier(tzOffsetMinutes: number): string {
-  // In JS, tzOffsetMinutes is UTC - Local (e.g. -480 for UTC+8)
   const shiftMinutes = -tzOffsetMinutes;
   const sign = shiftMinutes >= 0 ? "+" : "-";
   return `${sign}${Math.abs(shiftMinutes)} minutes`;
@@ -93,7 +95,83 @@ export function formatUsageCsv(items: UsageRow[]): string {
     lines.push(row.join(","));
   }
 
-  // Prepend UTF-8 BOM (\uFEFF) for seamless Excel Chinese/Unicode opening
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+export function formatMonthlyReportCsv(report: MonthlyReport): string {
+  const lines: string[] = [];
+  lines.push(`CPG AI 网关月度账单报表 - ${report.month}`);
+  lines.push("");
+  lines.push("=== 核心概览 ===");
+  lines.push(`统计月份,${report.month}`);
+  lines.push(`总消耗金额 (USD),$${report.total_cost_usd.toFixed(4)}`);
+  lines.push(`总请求次数,${report.total_requests}`);
+  lines.push(`输入 Token,${report.total_input_tokens}`);
+  lines.push(`输出 Token,${report.total_output_tokens}`);
+  lines.push(`总 Token,${report.total_tokens}`);
+  lines.push(`缓存命中次数,${report.cache_hit_count}`);
+  lines.push(`缓存节省金额 (USD),$${report.cache_saved_cost_usd.toFixed(4)}`);
+  lines.push(`环比上月费用涨跌,${report.mom_growth.cost_growth_percent}%`);
+  lines.push(`环比上月请求涨跌,${report.mom_growth.request_growth_percent}%`);
+  lines.push("");
+
+  lines.push("=== 模型消费构成 ===");
+  lines.push("模型名称,请求次数,输入 Token,输出 Token,总 Token,消费金额 (USD),占比 (%)");
+  for (const m of report.by_model) {
+    lines.push(
+      [
+        escapeCsvField(m.name),
+        m.request_count,
+        m.input_tokens,
+        m.output_tokens,
+        m.total_tokens,
+        m.cost_usd.toFixed(4),
+        `${m.share_percent}%`,
+      ].join(",")
+    );
+  }
+  lines.push("");
+
+  lines.push("=== 服务商消费构成 ===");
+  lines.push("服务商,请求次数,输入 Token,输出 Token,总 Token,消费金额 (USD),占比 (%)");
+  for (const p of report.by_provider) {
+    lines.push(
+      [
+        escapeCsvField(p.name),
+        p.request_count,
+        p.input_tokens,
+        p.output_tokens,
+        p.total_tokens,
+        p.cost_usd.toFixed(4),
+        `${p.share_percent}%`,
+      ].join(",")
+    );
+  }
+  lines.push("");
+
+  lines.push("=== 设备/客户端消费构成 ===");
+  lines.push("设备名称,请求次数,输入 Token,输出 Token,总 Token,消费金额 (USD),占比 (%)");
+  for (const d of report.by_device) {
+    lines.push(
+      [
+        escapeCsvField(d.name),
+        d.request_count,
+        d.input_tokens,
+        d.output_tokens,
+        d.total_tokens,
+        d.cost_usd.toFixed(4),
+        `${d.share_percent}%`,
+      ].join(",")
+    );
+  }
+  lines.push("");
+
+  lines.push("=== 每日消费走势 ===");
+  lines.push("日期,请求次数,总 Token,消费金额 (USD)");
+  for (const t of report.daily_trend) {
+    lines.push([t.date, t.request_count, t.total_tokens, t.cost_usd.toFixed(4)].join(","));
+  }
+
   return "\uFEFF" + lines.join("\r\n");
 }
 
@@ -126,6 +204,83 @@ usageApp.get("/model-latency", async (c) => {
 
   const benchmark = await statsModelLatency(c.env, since);
   return c.json({ items: benchmark });
+});
+
+usageApp.get("/monthly-report", async (c) => {
+  const month = c.req.query("month");
+  const tzOffset = getTzOffsetMinutes(c);
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
+  const report = await generateMonthlyReport(c.env, month, tzModifier);
+  return c.json(report);
+});
+
+usageApp.get("/monthly-report/export", async (c) => {
+  const month = c.req.query("month");
+  const tzOffset = getTzOffsetMinutes(c);
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
+  const report = await generateMonthlyReport(c.env, month, tzModifier);
+  const csv = formatMonthlyReportCsv(report);
+  const filename = `monthly-bill-${report.month}.csv`;
+
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-cache",
+    },
+  });
+});
+
+usageApp.post("/monthly-report/push-webhook", async (c) => {
+  const month = c.req.query("month");
+  const tzOffset = getTzOffsetMinutes(c);
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
+  const report = await generateMonthlyReport(c.env, month, tzModifier);
+
+  const topModels = report.by_model.slice(0, 3).map((m) => `• **${m.name}**: $${m.cost_usd.toFixed(2)} (${m.share_percent}%)`).join("\n");
+  const topProviders = report.by_provider.slice(0, 3).map((p) => `• **${p.name}**: $${p.cost_usd.toFixed(2)} (${p.share_percent}%)`).join("\n");
+
+  const msg = [
+    `### 📊【AI Gateway】${report.month} 月度用量账单汇总`,
+    `> **当月总消耗**: **$${report.total_cost_usd.toFixed(2)}** (环比上月: ${report.mom_growth.cost_growth_percent >= 0 ? "+" : ""}${report.mom_growth.cost_growth_percent}%)`,
+    `> **总请求数**: **${report.total_requests.toLocaleString()}** 次 | **总 Token**: **${report.total_tokens.toLocaleString()}**`,
+    report.cache_saved_cost_usd > 0 ? `> **KV 缓存节省**: 命中 **${report.cache_hit_count}** 次，节省 **$${report.cache_saved_cost_usd.toFixed(2)}**` : "",
+    "",
+    "**🏆 模型消费 Top 3**:",
+    topModels || "• 无消耗记录",
+    "",
+    "**🏢 服务商消费 Top 3**:",
+    topProviders || "• 无消耗记录",
+  ].filter(Boolean).join("\n");
+
+  const result = await sendWebhookNotification(c.env, {
+    event: "monthly_report",
+    title: `📊【AI Gateway】${report.month} 月度账单摘要`,
+    message: msg,
+    details: {
+      month: report.month,
+      total_cost_usd: report.total_cost_usd,
+      total_requests: report.total_requests,
+      total_tokens: report.total_tokens,
+      mom_growth_cost_pct: report.mom_growth.cost_growth_percent,
+    },
+  });
+
+  return c.json({ ok: result.ok, message: result.ok ? "月度账单已成功推送到 Webhook" : (result.error || "Webhook 推送失败或未配置"), details: result });
+});
+
+usageApp.get("/cost-analytics", async (c) => {
+  const range = c.req.query("range") || "30d";
+  const tzOffset = getTzOffsetMinutes(c);
+  let since: number;
+  if (range === "7d") since = startOfToday(6, tzOffset);
+  else if (range === "90d") since = startOfToday(89, tzOffset);
+  else since = startOfToday(29, tzOffset);
+
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
+  const analytics = await statsCostAnalytics(c.env, since, tzModifier);
+  return c.json(analytics);
 });
 
 usageApp.get("/export", async (c) => {

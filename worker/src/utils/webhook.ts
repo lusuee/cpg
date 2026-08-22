@@ -2,7 +2,13 @@ import type { Env } from "../types";
 import { getSetting } from "../db/repo";
 
 export interface WebhookEventPayload {
-  event: "budget_exceeded" | "budget_warning" | "provider_error" | "test";
+  event:
+    | "budget_exceeded"
+    | "budget_warning"
+    | "device_budget_exceeded"
+    | "monthly_report"
+    | "provider_error"
+    | "test";
   title: string;
   message: string;
   details?: Record<string, unknown>;

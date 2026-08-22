@@ -20,9 +20,10 @@ devicesApp.get("/", async (c) => {
 devicesApp.post("/", zValidator("json", CreateDeviceSchema), async (c) => {
   const data = c.req.valid("json");
   const rateLimitRpm = typeof data.rate_limit_rpm === "number" ? Math.max(0, data.rate_limit_rpm) : 0;
+  const costLimitMonthly = typeof data.cost_limit_monthly === "number" ? Math.max(0, data.cost_limit_monthly) : 0;
   const token = generateDeviceToken();
   const tokenHash = await hashToken(token);
-  const device = await createDevice(c.env, data.name.trim(), tokenHash, rateLimitRpm);
+  const device = await createDevice(c.env, data.name.trim(), tokenHash, rateLimitRpm, costLimitMonthly);
   return c.json({ item: device, token }, 201);
 });
 
@@ -32,6 +33,7 @@ devicesApp.put("/:id", zValidator("json", UpdateDeviceSchema), async (c) => {
     name: data.name !== undefined ? data.name.trim() : undefined,
     enabled: data.enabled,
     rate_limit_rpm: typeof data.rate_limit_rpm === "number" ? Math.max(0, data.rate_limit_rpm) : undefined,
+    cost_limit_monthly: typeof data.cost_limit_monthly === "number" ? Math.max(0, data.cost_limit_monthly) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ item: row });

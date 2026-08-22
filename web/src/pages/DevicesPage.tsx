@@ -23,6 +23,7 @@ export default function DevicesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [rateLimitRpm, setRateLimitRpm] = useState<string>("0");
+  const [costLimitMonthly, setCostLimitMonthly] = useState<string>("0");
   const [created, setCreated] = useState<CreateResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +31,7 @@ export default function DevicesPage() {
   const [editingDevice, setEditingDevice] = useState<DeviceItem | null>(null);
   const [editName, setEditName] = useState("");
   const [editRpm, setEditRpm] = useState("0");
+  const [editCostLimit, setEditCostLimit] = useState("0");
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -39,10 +41,12 @@ export default function DevicesPage() {
       const res = await api.post<CreateResponse>("/api/devices", {
         name: name.trim(),
         rate_limit_rpm: parseInt(rateLimitRpm, 10) || 0,
+        cost_limit_monthly: parseFloat(costLimitMonthly) || 0,
       });
       setCreated(res);
       setName("");
       setRateLimitRpm("0");
+      setCostLimitMonthly("0");
       setShowCreate(false);
       await refresh();
       toast.success(`已成功创建设备「${res.item.name}」`);
@@ -57,6 +61,7 @@ export default function DevicesPage() {
     setEditingDevice(d);
     setEditName(d.name);
     setEditRpm(String(d.rate_limit_rpm || 0));
+    setEditCostLimit(String(d.cost_limit_monthly || 0));
     setError("");
   }
 
@@ -68,6 +73,7 @@ export default function DevicesPage() {
       await api.put(`/api/devices/${editingDevice.id}`, {
         name: editName.trim(),
         rate_limit_rpm: parseInt(editRpm, 10) || 0,
+        cost_limit_monthly: parseFloat(editCostLimit) || 0,
       });
       setEditingDevice(null);
       await refresh();
@@ -134,67 +140,106 @@ export default function DevicesPage() {
                   <th className="pb-3 px-3 whitespace-nowrap">设备名称</th>
                   <th className="pb-3 px-2 whitespace-nowrap">当前状态</th>
                   <th className="pb-3 px-2 whitespace-nowrap">每分钟限流 (RPM)</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">本月消费 / 限额</th>
                   <th className="pb-3 px-2 whitespace-nowrap">最近活跃时间</th>
                   <th className="pb-3 px-2 whitespace-nowrap">创建时间</th>
                   <th className="pb-3 px-3 text-right whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {items.map((d) => (
-                  <tr key={d.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">{d.name}</div>
-                      <div className="font-mono text-[11px] text-slate-400 dark:text-slate-500">ID: {d.id}</div>
-                    </td>
-                    <td className="py-3 px-2 whitespace-nowrap">
-                      {d.revoked_at ? (
-                        <Badge tone="red" dot>
-                          已撤销
-                        </Badge>
-                      ) : d.enabled ? (
-                        <Badge tone="green" dot>
-                          正常
-                        </Badge>
-                      ) : (
-                        <Badge tone="slate" dot>
-                          已暂停
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 font-mono text-xs whitespace-nowrap">
-                      {d.rate_limit_rpm ? (
-                        <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500">无限制</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">{fmtTime(d.last_used_at)}</td>
-                    <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">{fmtTime(d.created_at)}</td>
-                    <td className="py-3 px-3 text-right whitespace-nowrap">
-                      {!d.revoked_at ? (
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(d)}>
-                            <IconEdit />
-                            <span>编辑</span>
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => onToggle(d)}>
-                            {d.enabled ? "暂停" : "恢复"}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                            onClick={() => onRevoke(d)}
-                          >
-                            撤销
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 dark:text-slate-500 text-xs italic">不可用</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {items.map((d) => {
+                  const spend = d.current_month_cost || 0;
+                  const limit = d.cost_limit_monthly || 0;
+                  const isBlocked = limit > 0 && spend >= limit;
+                  const pct = limit > 0 ? Math.min(100, Math.round((spend / limit) * 100)) : 0;
+                  return (
+                    <tr key={d.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">{d.name}</div>
+                        <div className="font-mono text-[11px] text-slate-400 dark:text-slate-500">ID: {d.id}</div>
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {d.revoked_at ? (
+                          <Badge tone="red" dot>
+                            已撤销
+                          </Badge>
+                        ) : isBlocked ? (
+                          <Badge tone="red" dot>
+                            已超额熔断
+                          </Badge>
+                        ) : d.enabled ? (
+                          <Badge tone="green" dot>
+                            正常
+                          </Badge>
+                        ) : (
+                          <Badge tone="slate" dot>
+                            已暂停
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 font-mono text-xs whitespace-nowrap">
+                        {d.rate_limit_rpm ? (
+                          <Badge tone="blue">{d.rate_limit_rpm} 次/分</Badge>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500">无限制</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {limit > 0 ? (
+                          <div className="space-y-1 min-w-[130px]">
+                            <div className="flex items-center justify-between text-xs font-mono">
+                              <span className={isBlocked ? "text-rose-600 font-bold" : "text-slate-700 dark:text-slate-300"}>
+                                ${spend.toFixed(2)}
+                              </span>
+                              <span className="text-slate-400">/ ${limit.toFixed(2)}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  pct >= 100
+                                    ? "bg-rose-500"
+                                    : pct >= 80
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-500"
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-mono text-slate-600 dark:text-slate-400">
+                            ${spend.toFixed(2)} <span className="text-slate-400 font-sans text-[11px]">(不设限)</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-slate-600 dark:text-slate-400 text-xs whitespace-nowrap">{fmtTime(d.last_used_at)}</td>
+                      <td className="py-3 px-2 text-slate-400 dark:text-slate-500 text-xs whitespace-nowrap">{fmtTime(d.created_at)}</td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        {!d.revoked_at ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(d)}>
+                              <IconEdit />
+                              <span>编辑</span>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => onToggle(d)}>
+                              {d.enabled ? "暂停" : "恢复"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                              onClick={() => onRevoke(d)}
+                            >
+                              撤销
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500 text-xs italic">不可用</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -224,17 +269,33 @@ export default function DevicesPage() {
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              每分钟请求限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0 为不限制）</span>
-            </label>
-            <Input
-              type="number"
-              min="0"
-              value={rateLimitRpm}
-              onChange={(e) => setRateLimitRpm(e.target.value)}
-              placeholder="0"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                每分钟限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0为不限）</span>
+              </label>
+              <Input
+                type="number"
+                min="0"
+                value={rateLimitRpm}
+                onChange={(e) => setRateLimitRpm(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                月度费用限额 ($) <span className="text-slate-400 dark:text-slate-500 font-normal">（0为不限）</span>
+              </label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                value={costLimitMonthly}
+                onChange={(e) => setCostLimitMonthly(e.target.value)}
+                placeholder="0"
+              />
+            </div>
           </div>
 
           {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}
@@ -267,17 +328,33 @@ export default function DevicesPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              每分钟请求限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0 为不限制）</span>
-            </label>
-            <Input
-              type="number"
-              min="0"
-              value={editRpm}
-              onChange={(e) => setEditRpm(e.target.value)}
-              placeholder="0"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                每分钟限流 (RPM) <span className="text-slate-400 dark:text-slate-500 font-normal">（0为不限）</span>
+              </label>
+              <Input
+                type="number"
+                min="0"
+                value={editRpm}
+                onChange={(e) => setEditRpm(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                月度费用限额 ($) <span className="text-slate-400 dark:text-slate-500 font-normal">（0为不限）</span>
+              </label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                value={editCostLimit}
+                onChange={(e) => setEditCostLimit(e.target.value)}
+                placeholder="0"
+              />
+            </div>
           </div>
 
           {error ? <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">{error}</div> : null}

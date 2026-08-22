@@ -11,6 +11,7 @@ import {
   getSetting,
   getCurrentMonthSpend,
   getRecentProviderAvgLatencies,
+  getDeviceMonthlyCost,
 } from "../db/repo";
 import { ensureSchema } from "../db/schema";
 import { sendWebhookNotification } from "../utils/webhook";
@@ -520,6 +521,36 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
           429
         );
       }
+    }
+  }
+
+  // Per-Device Monthly Spending Limit Check
+  if (device.cost_limit_monthly && device.cost_limit_monthly > 0) {
+    const deviceMonthSpend = await getDeviceMonthlyCost(c.env, device.id);
+    if (deviceMonthSpend >= device.cost_limit_monthly) {
+      waitUntil(
+        c,
+        sendWebhookNotification(c.env, {
+          event: "device_budget_exceeded",
+          title: `🚨【AI Gateway】设备「${device.name}」月度消费限额已达上限`,
+          message: `设备「${device.name}」(ID: ${device.id}) 本月已消耗 $${deviceMonthSpend.toFixed(2)}，达到设定的设备月度限额 $${device.cost_limit_monthly.toFixed(2)}，后续请求已被自动拦截。`,
+          details: {
+            device_id: device.id,
+            device_name: device.name,
+            cost_limit_monthly: device.cost_limit_monthly,
+            current_month_cost: deviceMonthSpend,
+          },
+        })
+      );
+      return c.json(
+        {
+          error: "device_budget_exceeded",
+          message: `Device monthly spending limit of $${device.cost_limit_monthly.toFixed(2)} exceeded ($${deviceMonthSpend.toFixed(2)} spent). Requests are blocked.`,
+          device_spent_usd: deviceMonthSpend,
+          device_limit_usd: device.cost_limit_monthly,
+        },
+        429
+      );
     }
   }
 
