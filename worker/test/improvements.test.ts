@@ -230,3 +230,63 @@ describe("Streaming Token Parsing with Head and Tail chunks", () => {
   });
 });
 
+describe("Admin Login Rate Limiting (Brute-force protection)", () => {
+  it("locks after 5 consecutive failed login attempts", async () => {
+    const { authApp, resetLoginAttemptsForTest } = await import("../src/admin/auth");
+    resetLoginAttemptsForTest();
+
+    const env: Env = {
+      DB: {} as any,
+      ASSETS: {} as any,
+      ADMIN_SECRET: "correct-secret",
+    };
+
+    // 5 failed attempts
+    for (let i = 0; i < 5; i++) {
+      const res = await authApp.fetch(
+        new Request("http://localhost/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "cf-connecting-ip": "1.2.3.4",
+          },
+          body: JSON.stringify({ password: "wrong-password" }),
+        }),
+        env
+      );
+      expect(res.status).toBe(401);
+    }
+
+    // 6th attempt should be locked with 429 Too Many Requests
+    const lockedRes = await authApp.fetch(
+      new Request("http://localhost/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "cf-connecting-ip": "1.2.3.4",
+        },
+        body: JSON.stringify({ password: "correct-secret" }),
+      }),
+      env
+    );
+    expect(lockedRes.status).toBe(429);
+    const body: any = await lockedRes.json();
+    expect(body.error).toBe("too_many_attempts");
+
+    // Different IP should still be able to login
+    const otherIpRes = await authApp.fetch(
+      new Request("http://localhost/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "cf-connecting-ip": "5.6.7.8",
+        },
+        body: JSON.stringify({ password: "correct-secret" }),
+      }),
+      env
+    );
+    expect(otherIpRes.status).toBe(200);
+  });
+});
+
+

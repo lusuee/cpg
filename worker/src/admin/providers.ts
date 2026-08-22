@@ -134,14 +134,29 @@ providersApp.post("/:id/fetch-models", async (c) => {
     headers["anthropic-version"] = "2023-06-01";
   } else if (p.type === "gemini") {
     headers["x-goog-api-key"] = upstreamKey;
-    headers["Authorization"] = `Bearer ${upstreamKey}`;
+    if (endpoint.includes("/openai")) {
+      headers["Authorization"] = `Bearer ${upstreamKey}`;
+    } else {
+      modelsUrl = `${endpoint}/models?key=${encodeURIComponent(upstreamKey)}`;
+    }
   } else {
     headers["Authorization"] = `Bearer ${upstreamKey}`;
   }
 
+  const fallbackAnthropicModels = [
+    "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+    "claude-3-haiku-20240307",
+  ];
+
   try {
     const res = await fetch(modelsUrl, { headers });
     if (!res.ok) {
+      if (p.type === "anthropic" && (res.status === 404 || res.status === 400)) {
+        return c.json({ models: fallbackAnthropicModels });
+      }
       const errText = await res.text();
       return c.json({
         error: "upstream_fetch_failed",
@@ -150,16 +165,31 @@ providersApp.post("/:id/fetch-models", async (c) => {
     }
     const data: any = await res.json();
     const modelIds: string[] = [];
-    const rawList = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : Array.isArray(data) ? data : [];
+    const rawList = Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data?.models)
+      ? data.models
+      : Array.isArray(data)
+      ? data
+      : [];
+
     for (const item of rawList) {
-      let name = typeof item === "string" ? item : item?.id || item?.name;
+      let name = typeof item === "string" ? item : item?.id || item?.name || item?.model;
       if (name && typeof name === "string") {
         if (name.startsWith("models/")) name = name.slice(7);
         modelIds.push(name);
       }
     }
+
+    if (modelIds.length === 0 && p.type === "anthropic") {
+      modelIds.push(...fallbackAnthropicModels);
+    }
+
     return c.json({ models: Array.from(new Set(modelIds)).sort() });
   } catch (err: any) {
+    if (p.type === "anthropic") {
+      return c.json({ models: fallbackAnthropicModels });
+    }
     return c.json({ error: "network_error", message: err.message || "请求上游超时或网络异常" }, 502);
   }
 });
@@ -181,15 +211,25 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
   let itemsToImport: ParsedCcSwitchProvider[] = [];
 
   if (data.items && data.items.length > 0) {
-    itemsToImport = data.items.map((it) => ({
-      name: it.name.trim(),
-      type: it.type,
-      endpoint: it.endpoint ? it.endpoint.trim() : null,
-      api_key: it.api_key ? it.api_key.trim() : null,
-      enabled: it.enabled !== false,
-      models: it.models || [],
-      raw_config: it.config_json ? JSON.parse(it.config_json) : undefined,
-    }));
+    itemsToImport = data.items.map((it) => {
+      let rawConfig: any = undefined;
+      if (it.config_json) {
+        try {
+          rawConfig = JSON.parse(it.config_json);
+        } catch {
+          // ignore invalid json in individual item
+        }
+      }
+      return {
+        name: it.name.trim(),
+        type: it.type,
+        endpoint: it.endpoint ? it.endpoint.trim() : null,
+        api_key: it.api_key ? it.api_key.trim() : null,
+        enabled: it.enabled !== false,
+        models: it.models || [],
+        raw_config: rawConfig,
+      };
+    });
   } else if (data.raw) {
     itemsToImport = parseCcSwitchConfig(data.raw);
   }
@@ -204,6 +244,20 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
     );
   }
 
+  // Pre-fetch all existing providers to avoid N+1 queries
+  const existingProvidersRes = await c.env.DB.prepare("SELECT * FROM providers").all<ProviderRow>();
+  const providerByName = new Map<string, ProviderRow>();
+  for (const p of existingProvidersRes.results || []) {
+    providerByName.set(p.name, p);
+  }
+
+  // Pre-fetch all existing models to avoid N+1 queries
+  const existingModelsRes = await c.env.DB.prepare("SELECT id, provider_id, model_name FROM models").all<{ id: string; provider_id: string; model_name: string }>();
+  const modelByProvAndName = new Set<string>();
+  for (const m of existingModelsRes.results || []) {
+    modelByProvAndName.add(`${m.provider_id}:${m.model_name}`);
+  }
+
   let importedProviders = 0;
   let updatedProviders = 0;
   let importedModels = 0;
@@ -215,10 +269,7 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
   }> = [];
 
   for (const item of itemsToImport) {
-    // Check if provider exists by name
-    const existing = (await c.env.DB.prepare("SELECT * FROM providers WHERE name = ?")
-      .bind(item.name)
-      .first()) as ProviderRow | null;
+    const existing = providerByName.get(item.name);
 
     let targetProviderId = "";
     let status: "created" | "updated" | "skipped" = "created";
@@ -236,9 +287,9 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
         status = "updated";
         updatedProviders++;
       } else {
-        // Create as new provider with modified name if duplicate
+        const newName = `${item.name} (导入)`;
         const newRow = await createProvider(c.env, {
-          name: `${item.name} (导入)`,
+          name: newName,
           type: item.type,
           endpoint: item.endpoint,
           api_key: item.api_key,
@@ -246,6 +297,7 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
           config_json: item.raw_config ? JSON.stringify(item.raw_config) : undefined,
         });
         targetProviderId = newRow.id;
+        providerByName.set(newName, newRow);
         status = "created";
         importedProviders++;
       }
@@ -259,6 +311,7 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
         config_json: item.raw_config ? JSON.stringify(item.raw_config) : undefined,
       });
       targetProviderId = newRow.id;
+      providerByName.set(item.name, newRow);
       status = "created";
       importedProviders++;
     }
@@ -267,14 +320,8 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
     if (data.import_models !== false && item.models && item.models.length > 0) {
       for (const m of item.models) {
         if (!m.model_name) continue;
-        // Check if model already exists under this provider
-        const existingModel = await c.env.DB.prepare(
-          "SELECT id FROM models WHERE provider_id = ? AND model_name = ?"
-        )
-          .bind(targetProviderId, m.model_name)
-          .first();
-
-        if (!existingModel) {
+        const key = `${targetProviderId}:${m.model_name.trim()}`;
+        if (!modelByProvAndName.has(key)) {
           await createModel(c.env, {
             provider_id: targetProviderId,
             model_name: m.model_name.trim(),
@@ -284,6 +331,7 @@ providersApp.post("/ccswitch/import", zValidator("json", CcSwitchImportSchema), 
             output_price_per_m: m.output_price_per_m || 0,
             enabled: true,
           });
+          modelByProvAndName.add(key);
           modelsCreatedForProv++;
           importedModels++;
         }

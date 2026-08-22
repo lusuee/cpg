@@ -164,7 +164,9 @@ describe("CC Switch Configuration Parser", () => {
     const mockEnv = {
       DB: {
         prepare: (sql: string) => ({
+          all: async () => ({ results: [] }),
           bind: (...args: any[]) => ({
+            all: async () => ({ results: [] }),
             first: async () => {
               if (sql.includes("SELECT * FROM providers WHERE name = ?")) {
                 return null; // Not existing

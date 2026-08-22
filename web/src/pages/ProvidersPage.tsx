@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
 import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch, IconUpload } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -46,6 +47,7 @@ const emptyForm: FormState = {
 };
 
 export default function ProvidersPage() {
+  const toast = useToast();
   const fetchProviders = useCallback(async () => {
     const res = await api.get<{ items: Provider[] }>("/api/providers");
     return res.items || [];
@@ -195,10 +197,25 @@ export default function ProvidersPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (form.config_json && form.config_json.trim()) {
+      try {
+        JSON.parse(form.config_json);
+      } catch (err: any) {
+        setError(`高级配置不是合法的 JSON 格式: ${err.message}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
-      if (form.id) await api.put(`/api/providers/${form.id}`, serialize(form));
-      else await api.post("/api/providers", serialize(form));
+      if (form.id) {
+        await api.put(`/api/providers/${form.id}`, serialize(form));
+        toast.success(`Provider「${form.name}」已更新`);
+      } else {
+        await api.post("/api/providers", serialize(form));
+        toast.success(`Provider「${form.name}」已创建`);
+      }
       setShow(false);
       invalidateCache("models-");
       invalidateCache("dashboard-");
@@ -222,8 +239,9 @@ export default function ProvidersPage() {
       invalidateCache("models-");
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`Provider「${p.name}」已删除`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "删除失败");
+      toast.error(err instanceof ApiError ? err.message : "删除失败");
     }
   }
 
@@ -233,8 +251,9 @@ export default function ProvidersPage() {
       invalidateCache("models-");
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`Provider「${p.name}」已${p.enabled ? "禁用" : "启用"}`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "操作失败");
+      toast.error(err instanceof ApiError ? err.message : "操作失败");
     }
   }
 
@@ -247,12 +266,14 @@ export default function ProvidersPage() {
         ids: Array.from(selectedIds),
         enabled,
       });
+      const count = selectedIds.size;
       setSelectedIds(new Set());
       invalidateCache("models-");
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`已批量${enabled ? "启用" : "禁用"} ${count} 个 Provider`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "批量更新失败");
+      toast.error(err instanceof ApiError ? err.message : "批量更新失败");
     } finally {
       setBatchOperating(false);
     }
@@ -271,10 +292,12 @@ export default function ProvidersPage() {
       invalidateCache("dashboard-");
       await refresh();
       if (res.skipped > 0) {
-        alert(`已删除 ${res.deleted} 个 Provider。有 ${res.skipped} 个 Provider 因名下仍有关联模型被跳过，请先在模型页解绑或删除对应模型。`);
+        toast.info(`已删除 ${res.deleted} 个 Provider。有 ${res.skipped} 个因名下仍有关联模型被跳过，请先删除关联模型。`);
+      } else {
+        toast.success(`已成功删除 ${res.deleted} 个 Provider`);
       }
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "批量删除失败");
+      toast.error(err instanceof ApiError ? err.message : "批量删除失败");
     } finally {
       setBatchOperating(false);
     }

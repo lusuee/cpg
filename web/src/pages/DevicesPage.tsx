@@ -3,6 +3,7 @@ import { api, ApiError, fmtTime } from "../api/client";
 import type { DeviceItem } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Spinner } from "../components/ui";
 import { IconPlus, IconEdit, IconDevices, IconShield, IconCopy } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { useQuery } from "../hooks/useQuery";
 
 interface CreateResponse {
@@ -11,6 +12,7 @@ interface CreateResponse {
 }
 
 export default function DevicesPage() {
+  const toast = useToast();
   const fetchDevices = useCallback(async () => {
     const res = await api.get<{ items: DeviceItem[] }>("/api/devices");
     return res.items || [];
@@ -34,13 +36,16 @@ export default function DevicesPage() {
     setError("");
     setSubmitting(true);
     try {
-      const rpm = parseInt(rateLimitRpm, 10) || 0;
-      const res = await api.post<CreateResponse>("/api/devices", { name, rate_limit_rpm: rpm });
+      const res = await api.post<CreateResponse>("/api/devices", {
+        name: name.trim(),
+        rate_limit_rpm: parseInt(rateLimitRpm, 10) || 0,
+      });
+      setCreated(res);
       setName("");
       setRateLimitRpm("0");
       setShowCreate(false);
-      setCreated(res);
       await refresh();
+      toast.success(`已成功创建设备「${res.item.name}」`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "创建失败");
     } finally {
@@ -59,17 +64,16 @@ export default function DevicesPage() {
     e.preventDefault();
     if (!editingDevice) return;
     setSubmitting(true);
-    setError("");
     try {
-      const rpm = parseInt(editRpm, 10) || 0;
       await api.put(`/api/devices/${editingDevice.id}`, {
-        name: editName,
-        rate_limit_rpm: rpm,
+        name: editName.trim(),
+        rate_limit_rpm: parseInt(editRpm, 10) || 0,
       });
       setEditingDevice(null);
       await refresh();
+      toast.success(`设备「${editName}」已更新`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "修改失败");
+      setError(err instanceof ApiError ? err.message : "更新失败");
     } finally {
       setSubmitting(false);
     }
@@ -79,8 +83,9 @@ export default function DevicesPage() {
     try {
       await api.put(`/api/devices/${d.id}`, { enabled: !d.enabled });
       await refresh();
+      toast.success(`设备「${d.name}」已${d.enabled ? "禁用" : "启用"}`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "操作失败");
+      toast.error(err instanceof ApiError ? err.message : "操作失败");
     }
   }
 
@@ -89,8 +94,9 @@ export default function DevicesPage() {
     try {
       await api.post(`/api/devices/${d.id}/revoke`);
       await refresh();
+      toast.success(`设备「${d.name}」Token 已成功撤销`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "操作失败");
+      toast.error(err instanceof ApiError ? err.message : "操作失败");
     }
   }
 

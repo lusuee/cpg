@@ -3,11 +3,13 @@ import { api, fmtNum, fmtTime } from "../api/client";
 import type { Provider, UsageItem } from "../types";
 import { Badge, Button, Card, Empty, Input, Select, Spinner, CopyButton } from "../components/ui";
 import { IconUsage, IconSearch, IconRefresh, IconDownload, IconZap } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { useQuery, getCacheData, setCacheData } from "../hooks/useQuery";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function UsagePage() {
+  const toast = useToast();
   const fetchProviders = useCallback(async () => {
     const res = await api.get<{ items: Provider[] }>("/api/providers");
     return res.items || [];
@@ -69,8 +71,9 @@ export default function UsagePage() {
       if (model.trim()) q.set("model", model.trim());
 
       await api.download(`/api/usage/export?${q.toString()}`, `usage-export-${range}.csv`);
+      toast.success("用量明细 CSV 已成功导出");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "导出 CSV 失败");
+      toast.error(err instanceof Error ? err.message : "导出 CSV 失败");
     } finally {
       setExporting(false);
     }

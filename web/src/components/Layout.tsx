@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { api } from "../api/client";
 import { Button } from "./ui";
 import { ThemeToggle } from "./ThemeToggle";
 import {
@@ -29,6 +30,24 @@ export default function Layout() {
   const { logout } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isHealthy, setIsHealthy] = useState<boolean | null>(true);
+
+  // Check health periodically
+  useEffect(() => {
+    let mounted = true;
+    const check = () => {
+      api
+        .get<{ ok: boolean }>("/api/health")
+        .then(() => mounted && setIsHealthy(true))
+        .catch(() => mounted && setIsHealthy(false));
+    };
+    check();
+    const interval = setInterval(check, 60_000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Auto-close mobile drawer when location changes
   useEffect(() => {
@@ -101,8 +120,12 @@ export default function Layout() {
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400">
             <span className="flex items-center gap-1.5 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Gateway 在线
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isHealthy ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                }`}
+              />
+              {isHealthy ? "Gateway 在线" : "Gateway 异常"}
             </span>
             <span className="text-[10px] text-slate-400 dark:text-slate-500">v1.0</span>
           </div>
@@ -147,8 +170,12 @@ export default function Layout() {
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0 space-y-3">
               <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400">
                 <span className="flex items-center gap-1.5 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Gateway 在线
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isHealthy ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                    }`}
+                  />
+                  {isHealthy ? "Gateway 在线" : "Gateway 异常"}
                 </span>
                 <span className="text-[10px] text-slate-400 dark:text-slate-500">v1.0</span>
               </div>

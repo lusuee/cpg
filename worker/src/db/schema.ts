@@ -107,7 +107,7 @@ let schemaInitialized = false;
 
 export async function ensureSchema(env: Env): Promise<void> {
   if (schemaInitialized) return;
-  if (!env?.DB) return;
+  if (!env?.DB || typeof env.DB.batch !== "function") return;
   try {
     const stmts = INIT_STATEMENTS.map((sql) => env.DB.prepare(sql));
     await env.DB.batch(stmts);

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { api } from "../api/client";
 import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
 import { IconTerminal, IconShield, IconZap, IconTrash } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { useQuery } from "../hooks/useQuery";
 
 interface SettingsData {
@@ -21,6 +22,7 @@ interface SettingsData {
 }
 
 export default function SettingsPage() {
+  const toast = useToast();
   const fetchSettings = useCallback(async () => {
     return await api.get<SettingsData>("/api/settings");
   }, []);
@@ -34,9 +36,9 @@ export default function SettingsPage() {
     setPurging(true);
     try {
       const res = await api.post<{ ok: boolean; cleared: number }>("/api/cache/purge", {});
-      alert(`网关缓存已清空，共清除 ${res.cleared ?? 0} 个缓存条目`);
+      toast.success(`网关缓存已清空，共清除 ${res.cleared ?? 0} 个缓存条目`);
     } catch (err: any) {
-      alert(`清空缓存失败: ${err.message || "未知错误"}`);
+      toast.error(`清空缓存失败: ${err.message || "未知错误"}`);
     } finally {
       setPurging(false);
     }

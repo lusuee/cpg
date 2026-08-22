@@ -8,6 +8,7 @@ import {
   recordUsageSafe,
   randomRequestId,
 } from "../db/repo";
+import { ensureSchema } from "../db/schema";
 import { parseUsage } from "./usage";
 import { buildUpstreamHeaders, cleanResponseHeaders } from "../utils/http";
 import {
@@ -544,10 +545,14 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   if (!response && row.fallback_model_id) {
     const fallbackRow = await getModelWithProviderById(c.env, row.fallback_model_id);
     if (fallbackRow) {
-      const fallbackCacheKey = fallbackRow.cache_enabled
-        ? await computeCacheKey(kind, fallbackRow.model_name, body)
-        : undefined;
-      response = await executeProxyAttempt(c, kind, device, fallbackRow, body, requestId, fallbackCacheKey);
+      const isAnthropic = fallbackRow.provider_type === "anthropic";
+      const isCompatible = (kind === "messages" && isAnthropic) || ((kind === "chat/completions" || kind === "responses") && !isAnthropic);
+      if (isCompatible) {
+        const fallbackCacheKey = fallbackRow.cache_enabled
+          ? await computeCacheKey(kind, fallbackRow.model_name, body)
+          : undefined;
+        response = await executeProxyAttempt(c, kind, device, fallbackRow, body, requestId, fallbackCacheKey);
+      }
     }
   }
 
@@ -559,6 +564,7 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
 }
 
 export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
+  await ensureSchema(c.env);
   const res = await c.env.DB.prepare(
     "SELECT m.id, m.model_name, m.display_name, m.alias, m.fallback_model_id, m.input_price_per_m, m.output_price_per_m, m.created_at, p.name as owned_by " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
@@ -666,6 +672,7 @@ export async function getModelHandler(c: Context<{ Bindings: Env }>) {
 }
 
 export async function listOllamaTagsHandler(c: Context<{ Bindings: Env }>) {
+  await ensureSchema(c.env);
   const res = await c.env.DB.prepare(
     "SELECT m.id, m.model_name, m.display_name, m.alias, m.created_at, p.name as owned_by " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +

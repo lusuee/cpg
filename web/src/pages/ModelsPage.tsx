@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import type { ModelItem, Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea, CopyButton } from "../components/ui";
 import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, IconCheck, IconTerminal, IconDownload, IconZap } from "../components/icons";
+import { useToast } from "../components/Toast";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -26,18 +27,21 @@ interface ModelsPageData {
 }
 
 export default function ModelsPage() {
+  const toast = useToast();
   const fetchModelsData = useCallback(async (): Promise<ModelsPageData> => {
-    const [m, p] = await Promise.all([
+    const [mRes, pRes] = await Promise.allSettled([
       api.get<{ items: ModelItem[] }>("/api/models"),
       api.get<{ items: Provider[] }>("/api/providers"),
     ]);
+    const m = mRes.status === "fulfilled" ? mRes.value : { items: [] };
+    const p = pRes.status === "fulfilled" ? pRes.value : { items: [] };
     return {
       items: m.items || [],
       providers: p.items || [],
     };
   }, []);
 
-  const { data, loading, refresh } = useQuery("models-page-data", fetchModelsData);
+  const { data, loading, error: queryError, refresh } = useQuery("models-page-data", fetchModelsData);
   const items = data?.items || [];
   const providers = data?.providers || [];
 
@@ -188,10 +192,25 @@ export default function ModelsPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (form.config_json && form.config_json.trim()) {
+      try {
+        JSON.parse(form.config_json);
+      } catch (err: any) {
+        setError(`高级配置不是合法的 JSON 格式: ${err.message}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
-      if (form.id) await api.put(`/api/models/${form.id}`, serialize(form));
-      else await api.post("/api/models", serialize(form));
+      if (form.id) {
+        await api.put(`/api/models/${form.id}`, serialize(form));
+        toast.success(`模型「${form.model_name}」已更新`);
+      } else {
+        await api.post("/api/models", serialize(form));
+        toast.success(`模型「${form.model_name}」已创建`);
+      }
       setShow(false);
       invalidateCache("dashboard-");
       await refresh();
@@ -213,8 +232,9 @@ export default function ModelsPage() {
       });
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`模型「${m.model_name}」已删除`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "删除失败");
+      toast.error(err instanceof ApiError ? err.message : "删除失败");
     }
   }
 
@@ -223,8 +243,9 @@ export default function ModelsPage() {
       await api.put(`/api/models/${m.id}`, { enabled: !m.enabled });
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`模型「${m.model_name}」已${m.enabled ? "禁用" : "启用"}`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "操作失败");
+      toast.error(err instanceof ApiError ? err.message : "操作失败");
     }
   }
 
@@ -236,8 +257,9 @@ export default function ModelsPage() {
       });
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`模型「${m.model_name}」缓存已${m.cache_enabled ? "关闭" : "开启"}`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "操作失败");
+      toast.error(err instanceof ApiError ? err.message : "操作失败");
     }
   }
 
@@ -250,11 +272,13 @@ export default function ModelsPage() {
         ids: Array.from(selectedIds),
         enabled,
       });
+      const count = selectedIds.size;
       setSelectedIds(new Set());
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`已批量${enabled ? "启用" : "禁用"} ${count} 个模型`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "批量更新失败");
+      toast.error(err instanceof ApiError ? err.message : "批量更新失败");
     } finally {
       setBatchOperating(false);
     }
@@ -269,11 +293,13 @@ export default function ModelsPage() {
         cache_enabled: enabled,
         cache_ttl: 3600,
       });
+      const count = selectedIds.size;
       setSelectedIds(new Set());
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`已批量${enabled ? "开启" : "关闭"} ${count} 个模型的缓存`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "批量更新缓存失败");
+      toast.error(err instanceof ApiError ? err.message : "批量更新缓存失败");
     } finally {
       setBatchOperating(false);
     }
@@ -284,14 +310,16 @@ export default function ModelsPage() {
     if (!confirm(`确定要永久删除选中的 ${selectedIds.size} 个模型吗？此操作无法撤销。`)) return;
     setBatchOperating(true);
     try {
+      const count = selectedIds.size;
       await api.post("/api/models/batch-delete", {
         ids: Array.from(selectedIds),
       });
       setSelectedIds(new Set());
       invalidateCache("dashboard-");
       await refresh();
+      toast.success(`已成功删除选中的 ${count} 个模型`);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "批量删除失败");
+      toast.error(err instanceof ApiError ? err.message : "批量删除失败");
     } finally {
       setBatchOperating(false);
     }
@@ -483,7 +511,7 @@ wire_specification = "openai"
     try {
       await api.download("/api/models/catalog/export", "model-catalog.json");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "导出 model-catalog.json 失败");
+      toast.error(err instanceof Error ? err.message : "导出 model-catalog.json 失败");
     } finally {
       setDownloadingCatalog(false);
     }
