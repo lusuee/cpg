@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import type { Env } from "./types";
 import { adminApp } from "./admin";
 import { gatewayApp } from "./gateway";
+import { listProviders, aggregateDailyStats } from "./db/repo";
 import { ensureSchema } from "./db/schema";
-import { aggregateDailyStats } from "./db/repo";
+import { pingSingleProvider } from "./admin/providers";
 import { listOllamaTagsHandler } from "./gateway/proxy";
 
 export const app = new Hono<{ Bindings: Env }>();
@@ -62,7 +63,14 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   scheduled: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(aggregateDailyStats(env));
+    ctx.waitUntil(
+      (async () => {
+        await aggregateDailyStats(env);
+        const providers = await listProviders(env);
+        const enabled = providers.filter((p) => p.enabled);
+        await Promise.allSettled(enabled.map((p) => pingSingleProvider(env, p)));
+      })()
+    );
   },
 };
 

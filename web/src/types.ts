@@ -10,6 +10,10 @@ export interface Provider {
   enabled: number;
   config_json: string | null;
   secret_configured?: boolean;
+  health_status?: "healthy" | "degraded" | "unhealthy" | "unknown";
+  health_latency_ms?: number;
+  last_ping_at?: number;
+  health_message?: string;
 }
 
 export interface ModelItem {
@@ -27,6 +31,9 @@ export interface ModelItem {
   config_json: string | null;
   provider_name?: string;
   provider_type?: string;
+  capabilities?: string[];
+  routing_strategy?: "priority" | "lowest_latency" | "weighted";
+  weight?: number;
 }
 
 export interface DeviceItem {

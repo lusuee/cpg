@@ -9,6 +9,9 @@ import {
   createModel,
   batchUpdateProviders,
   batchDeleteProviders,
+  getProviderHealthMap,
+  recordProviderHealth,
+  type ProviderHealthInfo,
 } from "../db/repo";
 
 import {
@@ -36,22 +39,132 @@ export function maskApiKey(key: string | null | undefined): string | null {
   return `${prefix}••••${suffix}`;
 }
 
-export function publicProvider(row: ProviderRow, env: Env) {
+export function publicProvider(row: ProviderRow, env: Env, healthMap?: Record<string, ProviderHealthInfo>) {
   const hasDbKey = Boolean(row.api_key && row.api_key.trim());
   const hasEnvSecret = Boolean(row.secret_name && (env as Record<string, unknown>)[row.secret_name]);
+  const health = healthMap ? healthMap[row.id] : undefined;
+
   return {
     ...row,
     api_key: undefined,
     api_key_configured: hasDbKey || hasEnvSecret,
     api_key_masked: hasDbKey ? maskApiKey(row.api_key) : null,
     secret_configured: hasDbKey || hasEnvSecret,
+    health_status: health?.status || (row.enabled ? "healthy" : "unknown"),
+    health_latency_ms: health?.latency_ms,
+    last_ping_at: health?.last_ping_at,
+    health_message: health?.message,
   };
 }
 
+export async function pingSingleProvider(env: Env, p: ProviderRow): Promise<{
+  id: string;
+  name: string;
+  ok: boolean;
+  status: "healthy" | "degraded" | "unhealthy";
+  latency_ms: number;
+  status_code?: number;
+  message?: string;
+}> {
+  const upstreamKey = p.api_key || (p.secret_name ? (env as Record<string, unknown>)[p.secret_name] : undefined);
+  if (!upstreamKey || typeof upstreamKey !== "string") {
+    const info: ProviderHealthInfo = {
+      status: "unhealthy",
+      latency_ms: 0,
+      last_ping_at: Date.now(),
+      message: "未配置 API Key",
+    };
+    await recordProviderHealth(env, p.id, info);
+    return { id: p.id, name: p.name, ok: false, status: "unhealthy", latency_ms: 0, message: "未配置 API Key" };
+  }
+
+  const endpoint = (
+    p.endpoint ||
+    (p.type === "anthropic"
+      ? "https://api.anthropic.com/v1"
+      : p.type === "gemini"
+      ? "https://generativelanguage.googleapis.com/v1beta"
+      : "https://api.openai.com/v1")
+  ).replace(/\/+$/, "");
+
+  let testUrl = `${endpoint}/models`;
+  const headers: Record<string, string> = {
+    "User-Agent": "Cloudflare-AI-Gateway/1.0",
+  };
+
+  if (p.type === "anthropic") {
+    headers["x-api-key"] = upstreamKey;
+    headers["anthropic-version"] = "2023-06-01";
+  } else if (p.type === "gemini") {
+    headers["x-goog-api-key"] = upstreamKey;
+    if (endpoint.includes("/openai")) {
+      headers["Authorization"] = `Bearer ${upstreamKey}`;
+    } else {
+      testUrl = `${endpoint}/models?key=${encodeURIComponent(upstreamKey)}`;
+    }
+  } else {
+    headers["Authorization"] = `Bearer ${upstreamKey}`;
+  }
+
+  const t0 = Date.now();
+  try {
+    const res = await fetch(testUrl, {
+      headers,
+      signal: AbortSignal.timeout(7000),
+    });
+    const latency_ms = Date.now() - t0;
+    const isOk = res.ok || (p.type === "anthropic" && (res.status === 404 || res.status === 400));
+    const status: "healthy" | "degraded" | "unhealthy" = isOk
+      ? latency_ms > 1200
+        ? "degraded"
+        : "healthy"
+      : "unhealthy";
+
+    const message = isOk ? "连接正常" : `上游返回 HTTP ${res.status}`;
+    const info: ProviderHealthInfo = {
+      status,
+      latency_ms,
+      last_ping_at: Date.now(),
+      status_code: res.status,
+      message,
+    };
+    await recordProviderHealth(env, p.id, info);
+    return { id: p.id, name: p.name, ok: isOk, status, latency_ms, status_code: res.status, message };
+  } catch (err: any) {
+    const latency_ms = Date.now() - t0;
+    const info: ProviderHealthInfo = {
+      status: "unhealthy",
+      latency_ms,
+      last_ping_at: Date.now(),
+      message: err.message || "请求超时或网络不可达",
+    };
+    await recordProviderHealth(env, p.id, info);
+    return { id: p.id, name: p.name, ok: false, status: "unhealthy", latency_ms, message: info.message };
+  }
+}
+
 providersApp.get("/", async (c) => {
-  const rows = await listProviders(c.env);
-  const result = rows.map((p) => publicProvider(p, c.env));
+  const [rows, healthMap] = await Promise.all([
+    listProviders(c.env),
+    getProviderHealthMap(c.env),
+  ]);
+  const result = rows.map((p) => publicProvider(p, c.env, healthMap));
   return c.json({ items: result });
+});
+
+providersApp.post("/ping-all", async (c) => {
+  const rows = await listProviders(c.env);
+  const enabledProviders = rows.filter((p) => p.enabled);
+  const results = await Promise.all(enabledProviders.map((p) => pingSingleProvider(c.env, p)));
+  return c.json({ items: results });
+});
+
+providersApp.post("/:id/ping", async (c) => {
+  const id = c.req.param("id");
+  const p = await getProvider(c.env, id);
+  if (!p) return c.json({ error: "provider_not_found" }, 404);
+  const result = await pingSingleProvider(c.env, p);
+  return c.json(result);
 });
 
 providersApp.post("/", zValidator("json", CreateProviderSchema), async (c) => {

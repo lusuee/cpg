@@ -307,17 +307,64 @@ export async function batchDeleteModels(env: Env, ids: string[]): Promise<number
 }
 
 export async function findModelAndProvider(env: Env, modelKey: string): Promise<ModelWithProvider | null> {
-  return (await env.DB.prepare(
+  const candidates = await findModelCandidates(env, modelKey);
+  return candidates[0] || null;
+}
+
+export async function findModelCandidates(env: Env, modelKey: string): Promise<ModelWithProvider[]> {
+  await ensureSchema(env);
+  const res = await env.DB.prepare(
     "SELECT m.*, p.name as provider_name, p.type as provider_type, p.api_key as provider_api_key, p.secret_name as provider_secret_name, p.endpoint as provider_endpoint " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 AND (m.model_name = ? OR m.alias = ?) " +
-      "ORDER BY (CASE WHEN m.model_name = ? THEN 0 ELSE 1 END), m.id ASC LIMIT 1"
-  ).bind(modelKey, modelKey, modelKey).first()) as ModelWithProvider | null;
+      "ORDER BY (CASE WHEN m.model_name = ? THEN 0 ELSE 1 END), m.created_at DESC"
+  ).bind(modelKey, modelKey, modelKey).all<ModelWithProvider>();
+  return (res.results || []) as unknown as ModelWithProvider[];
+}
+
+export async function getRecentProviderAvgLatencies(env: Env, sinceMs = 3600_000): Promise<Record<string, number>> {
+  await ensureSchema(env);
+  const since = Date.now() - sinceMs;
+  const res = await env.DB.prepare(`
+    SELECT provider_id, COALESCE(AVG(latency_ms), 0) as avg_latency
+    FROM usage
+    WHERE created_at >= ? AND latency_ms > 0 AND (status_code IS NULL OR status_code < 400)
+    GROUP BY provider_id
+  `).bind(since).all<{ provider_id: string; avg_latency: number }>();
+
+  const map: Record<string, number> = {};
+  for (const r of (res.results || [])) {
+    if (r.provider_id) map[r.provider_id] = Math.round(Number(r.avg_latency));
+  }
+  return map;
+}
+
+export interface ProviderHealthInfo {
+  status: "healthy" | "degraded" | "unhealthy";
+  latency_ms: number;
+  last_ping_at: number;
+  status_code?: number;
+  message?: string;
+}
+
+export async function getProviderHealthMap(env: Env): Promise<Record<string, ProviderHealthInfo>> {
+  const data = await getSetting<Record<string, ProviderHealthInfo>>(env, "provider_health_map");
+  return data || {};
+}
+
+export async function recordProviderHealth(
+  env: Env,
+  providerId: string,
+  info: ProviderHealthInfo
+): Promise<void> {
+  const current = await getProviderHealthMap(env);
+  current[providerId] = info;
+  await setSetting(env, "provider_health_map", current);
 }
 
 export async function listPublicModels(env: Env) {
   const res = await env.DB.prepare(
-    "SELECT m.model_name as id, m.display_name, m.alias, p.name as owned_by, m.created_at " +
+    "SELECT m.model_name as id, m.display_name, m.alias, p.name as owned_by, m.created_at, m.config_json " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY p.name, m.model_name"
   ).all();

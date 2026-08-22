@@ -188,6 +188,22 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
                   created_at: 1700000000000,
                 };
               },
+              all: async () => ({
+                results: [
+                  {
+                    id: "m1",
+                    model_name: "gpt-4o",
+                    display_name: "GPT-4o",
+                    alias: "gpt-4o-latest",
+                    provider_id: "prov_openai",
+                    provider_name: "OpenAI",
+                    provider_type: "openai",
+                    enabled: 1,
+                    provider_enabled: 1,
+                    created_at: 1700000000000,
+                  },
+                ],
+              }),
             }),
           }),
         },

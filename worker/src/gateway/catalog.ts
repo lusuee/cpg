@@ -110,6 +110,60 @@ export function inferInputModalities(modelName: string): string[] {
   return ["text"];
 }
 
+export function inferModelCapabilities(modelName: string): string[] {
+  const name = modelName.toLowerCase();
+  const caps: string[] = [];
+
+  // Vision
+  if (
+    name.includes("4o") ||
+    name.includes("vision") ||
+    name.includes("vl") ||
+    name.includes("gemini") ||
+    name.includes("claude-3") ||
+    name.includes("pixtral") ||
+    name.includes("omni")
+  ) {
+    caps.push("vision");
+  }
+
+  // Tool Call / Function Calling
+  if (
+    name.includes("gpt-4") ||
+    name.includes("gpt-3.5") ||
+    name.includes("claude-3") ||
+    name.includes("gemini") ||
+    name.includes("deepseek-chat") ||
+    name.includes("qwen") ||
+    name.includes("mistral") ||
+    name.includes("llama-3")
+  ) {
+    caps.push("tool_call");
+  }
+
+  // Reasoning
+  if (isReasoningModel(modelName)) {
+    caps.push("reasoning");
+  }
+
+  // Long Context (>= 128k)
+  if (inferContextWindow(modelName) >= 128000) {
+    caps.push("long_context");
+  }
+
+  // Audio / Realtime
+  if (name.includes("audio") || name.includes("realtime") || name.includes("voice") || name.includes("tts") || name.includes("whisper")) {
+    caps.push("audio");
+  }
+
+  // Code specialization
+  if (name.includes("code") || name.includes("coder") || name.includes("starcoder") || name.includes("codestral")) {
+    caps.push("code");
+  }
+
+  return caps;
+}
+
 export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
   const catalogEntries: ModelCatalogEntry[] = [];
   let priorityCounter = 1000;
@@ -134,6 +188,10 @@ export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
       typeof customConfig.context_window === "number"
         ? customConfig.context_window
         : inferContextWindow(m.model_name);
+
+    const capabilities: string[] = Array.isArray(customConfig.capabilities) && customConfig.capabilities.length
+      ? customConfig.capabilities
+      : inferModelCapabilities(m.model_name);
 
     const description =
       typeof customConfig.description === "string"
@@ -190,6 +248,7 @@ export function buildModelCatalog(models: ModelRow[]): ModelCatalog {
       upgrade: null,
       visibility: "list",
       web_search_tool_type: "text_and_image",
+      capabilities,
       ...customConfig,
     };
 

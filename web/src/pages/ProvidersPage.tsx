@@ -2,7 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch, IconUpload } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch, IconUpload, IconZap, IconActivity } from "../components/icons";
 import { useToast } from "../components/Toast";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
@@ -60,6 +60,10 @@ export default function ProvidersPage() {
   const [showAdvancedSecret, setShowAdvancedSecret] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Ping health states
+  const [pingingAll, setPingingAll] = useState(false);
+  const [pingingId, setPingingId] = useState<string | null>(null);
 
   // Search and filter state
   const [search, setSearch] = useState("");
@@ -303,6 +307,38 @@ export default function ProvidersPage() {
     }
   }
 
+  async function handlePingAll() {
+    setPingingAll(true);
+    try {
+      const res = await api.post<{ items: Array<{ id: string; name: string; ok: boolean; status: string; latency_ms: number; message?: string }> }>("/api/providers/ping-all", {});
+      await refresh();
+      const healthyCount = (res.items || []).filter((r) => r.ok).length;
+      const totalCount = (res.items || []).length;
+      toast.success(`全局连通性探测完成：${healthyCount}/${totalCount} 个 Provider 正常响应`);
+    } catch (err: any) {
+      toast.error(`探测失败: ${err.message || "未知错误"}`);
+    } finally {
+      setPingingAll(false);
+    }
+  }
+
+  async function handlePingSingle(p: Provider) {
+    setPingingId(p.id);
+    try {
+      const res = await api.post<{ ok: boolean; status: string; latency_ms: number; message?: string }>(`/api/providers/${p.id}/ping`, {});
+      await refresh();
+      if (res.ok) {
+        toast.success(`「${p.name}」连接正常 (RTT: ${res.latency_ms}ms)`);
+      } else {
+        toast.error(`「${p.name}」连接异常: ${res.message || "服务不可达"}`);
+      }
+    } catch (err: any) {
+      toast.error(`探测异常: ${err.message || "网络请求超时"}`);
+    } finally {
+      setPingingId(null);
+    }
+  }
+
   const filteredItems = items.filter((p) => {
     if (filterType && p.type !== filterType) return false;
     if (!search.trim()) return true;
@@ -348,6 +384,16 @@ export default function ProvidersPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            onClick={handlePingAll}
+            disabled={pingingAll || !items.length}
+            className="shadow-sm w-full sm:w-auto text-xs"
+            title="并发探测所有已启用的 Provider 连通性并测量往返延迟"
+          >
+            <IconZap className={pingingAll ? "animate-spin text-amber-500" : "text-emerald-500"} />
+            <span>{pingingAll ? "正在体检…" : "🩺 探测服务商健康"}</span>
+          </Button>
           <Button variant="secondary" onClick={openImport} className="shadow-sm w-full sm:w-auto">
             <IconUpload />
             <span>导入 CC Switch 配置</span>
@@ -433,7 +479,7 @@ export default function ProvidersPage() {
       <Card>
         {filteredItems.length ? (
           <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
-            <table className="w-full text-left text-xs sm:text-sm min-w-[600px]">
+            <table className="w-full text-left text-xs sm:text-sm min-w-[650px]">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                   <th className="pb-3 px-3 w-8">
@@ -446,6 +492,7 @@ export default function ProvidersPage() {
                   </th>
                   <th className="pb-3 px-2 whitespace-nowrap">名称</th>
                   <th className="pb-3 px-2 whitespace-nowrap">协议类型</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">健康状态 (RTT)</th>
                   <th className="pb-3 px-2 whitespace-nowrap">自定义 Endpoint</th>
                   <th className="pb-3 px-2 whitespace-nowrap">API 密钥 (Key)</th>
                   <th className="pb-3 px-2 whitespace-nowrap">运行状态</th>
@@ -455,6 +502,7 @@ export default function ProvidersPage() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredItems.map((p) => {
                   const isSelected = selectedIds.has(p.id);
+                  const isPingingThis = pingingId === p.id;
                   return (
                     <tr
                       key={p.id}
@@ -473,6 +521,25 @@ export default function ProvidersPage() {
                         <Badge tone={p.type === "anthropic" ? "purple" : p.type === "gemini" ? "amber" : "blue"}>
                           {p.type === "anthropic" ? "Anthropic" : p.type === "gemini" ? "Gemini" : "OpenAI"}
                         </Badge>
+                      </td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        {p.health_status === "healthy" ? (
+                          <Badge tone="green" dot title={p.health_message || "连接正常"}>
+                            ⚡ {p.health_latency_ms != null ? `${p.health_latency_ms}ms` : "正常"}
+                          </Badge>
+                        ) : p.health_status === "degraded" ? (
+                          <Badge tone="amber" dot title={p.health_message || "响应延迟较高"}>
+                            ⚠️ {p.health_latency_ms}ms
+                          </Badge>
+                        ) : p.health_status === "unhealthy" ? (
+                          <Badge tone="red" dot title={p.health_message || "服务商异常或密钥无效"}>
+                            ❌ 异常
+                          </Badge>
+                        ) : (
+                          <Badge tone="slate" dot>
+                            未检测
+                          </Badge>
+                        )}
                       </td>
                       <td className="py-3 px-2 font-mono text-slate-500 dark:text-slate-400 text-xs max-w-[180px] truncate">
                         {p.endpoint || <span className="text-slate-400 dark:text-slate-500 italic">官方默认</span>}
@@ -512,6 +579,17 @@ export default function ProvidersPage() {
                       </td>
                       <td className="py-3 px-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePingSingle(p)}
+                            disabled={isPingingThis}
+                            title="测试与该 Provider 的实时连通性"
+                            className="text-slate-600 dark:text-slate-300"
+                          >
+                            <IconZap className={isPingingThis ? "animate-spin text-amber-500" : ""} />
+                            <span>{isPingingThis ? "测试中…" : "Ping"}</span>
+                          </Button>
                           <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
                             <IconEdit />
                             <span>编辑</span>

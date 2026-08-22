@@ -3,17 +3,22 @@ import type { DeviceRow, Env, ModelWithProvider, ProviderType, TokenUsage } from
 import { authenticateGateway } from "./auth";
 import {
   findModelAndProvider,
+  findModelCandidates,
   getModelWithProviderById,
   checkDeviceRateLimit,
   recordUsageSafe,
   randomRequestId,
   getSetting,
   getCurrentMonthSpend,
+  getRecentProviderAvgLatencies,
 } from "../db/repo";
 import { ensureSchema } from "../db/schema";
 import { sendWebhookNotification } from "../utils/webhook";
 import { parseUsage } from "./usage";
 import { buildUpstreamHeaders, cleanResponseHeaders } from "../utils/http";
+import { selectCandidateRoute } from "./routing";
+import { parseRewriteRules, applyRequestRewriteRules } from "./rewrite";
+import { inferModelCapabilities } from "./catalog";
 import {
   convertResponsesRequest,
   convertChatToResponsesJson,
@@ -528,15 +533,37 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   const modelKey = body?.model;
   if (typeof modelKey !== "string" || !modelKey) return c.json({ error: "missing_model" }, 400);
 
-  let row = await findModelAndProvider(c.env, modelKey);
-  if (!row) return c.json({ error: "model_not_found", model: modelKey }, 404);
+  // 1. Fetch all model candidates across providers
+  const allCandidates = await findModelCandidates(c.env, modelKey);
+  if (!allCandidates.length) return c.json({ error: "model_not_found", model: modelKey }, 404);
 
-  if (kind === "messages" && row.provider_type !== "anthropic") {
-    return c.json({ error: "unsupported_provider_for_path", message: "/v1/messages requires an anthropic provider" }, 400);
+  // 2. Fetch recent provider latencies & sort candidates via dynamic routing engine
+  const recentLatencies = await getRecentProviderAvgLatencies(c.env);
+  const orderedCandidates = selectCandidateRoute(allCandidates, modelKey, recentLatencies);
+
+  // 3. Filter candidates for protocol compatibility
+  const compatibleCandidates = orderedCandidates.filter((cand) => {
+    if (kind === "messages") return cand.provider_type === "anthropic";
+    return cand.provider_type !== "anthropic";
+  });
+
+  if (!compatibleCandidates.length) {
+    return c.json(
+      {
+        error: "unsupported_provider_for_path",
+        message: kind === "messages"
+          ? "/v1/messages requires an anthropic provider"
+          : `/${kind} requires an openai or gemini provider`,
+      },
+      400
+    );
   }
-  if ((kind === "chat/completions" || kind === "responses") && row.provider_type === "anthropic") {
-    return c.json({ error: "unsupported_provider_for_path", message: `/${kind} requires an openai or gemini provider` }, 400);
-  }
+
+  let row = compatibleCandidates[0];
+
+  // 4. Apply Request Rewrite Rules (System Prompt injection, parameter capping, model renaming)
+  const rewriteRules = parseRewriteRules(row.config_json);
+  body = applyRequestRewriteRules(body, rewriteRules, kind);
 
   const requestId = randomRequestId();
   const isStream = body?.stream === true;
@@ -573,10 +600,25 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
     }
   }
 
-  // Primary attempt
+  // 5. Primary candidate execution attempt
   let response = await executeProxyAttempt(c, kind, device, row, body, requestId, cacheKey);
 
-  // If primary attempt failed and fallback_model_id is configured, attempt fallback
+  // 6. Failover across remaining compatible candidates
+  if (!response && compatibleCandidates.length > 1) {
+    for (let i = 1; i < compatibleCandidates.length; i++) {
+      const nextCandidate = compatibleCandidates[i];
+      const nextCacheKey = nextCandidate.cache_enabled
+        ? await computeCacheKey(kind, nextCandidate.model_name, body)
+        : undefined;
+      response = await executeProxyAttempt(c, kind, device, nextCandidate, body, requestId, nextCacheKey);
+      if (response) {
+        row = nextCandidate; // Update effective provider row for reporting
+        break;
+      }
+    }
+  }
+
+  // 7. If still failed and fallback_model_id is configured, attempt explicit fallback model
   if (!response && row.fallback_model_id) {
     const fallbackRow = await getModelWithProviderById(c.env, row.fallback_model_id);
     if (fallbackRow) {
@@ -597,7 +639,7 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
       sendWebhookNotification(c.env, {
         event: "provider_error",
         title: `⚠️【AI Gateway】服务商请求异常 (${row.provider_name})`,
-        message: `模型「${row.model_name}」主上游服务商 (${row.provider_name}) 请求失败且无法通过降级恢复。`,
+        message: `模型「${row.model_name}」主上游服务商 (${row.provider_name}) 请求失败且无法通过故障转移恢复。`,
         details: {
           model: row.model_name,
           provider: row.provider_name,
@@ -614,7 +656,7 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
 export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
   await ensureSchema(c.env);
   const res = await c.env.DB.prepare(
-    "SELECT m.id, m.model_name, m.display_name, m.alias, m.fallback_model_id, m.input_price_per_m, m.output_price_per_m, m.created_at, p.name as owned_by " +
+    "SELECT m.id, m.model_name, m.display_name, m.alias, m.fallback_model_id, m.input_price_per_m, m.output_price_per_m, m.config_json, m.created_at, p.name as owned_by " +
       "FROM models m JOIN providers p ON p.id = m.provider_id " +
       "WHERE m.enabled = 1 AND p.enabled = 1 ORDER BY p.name, m.model_name"
   ).all();
@@ -624,6 +666,16 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
 
   for (const r of (res.results || []) as any[]) {
     const created = r.created_at ? Math.floor(r.created_at / 1000) : 0;
+    let customConfig: Record<string, any> = {};
+    if (r.config_json) {
+      try {
+        customConfig = JSON.parse(r.config_json);
+      } catch {}
+    }
+    const capabilities = Array.isArray(customConfig.capabilities) && customConfig.capabilities.length
+      ? customConfig.capabilities
+      : inferModelCapabilities(r.model_name);
+
     const makeEntry = (id: string) => ({
       id,
       object: "model",
@@ -652,13 +704,13 @@ export async function listModelsHandler(c: Context<{ Bindings: Env }>) {
       fallback_model_id: r.fallback_model_id || null,
       input_price_per_m: r.input_price_per_m || 0,
       output_price_per_m: r.output_price_per_m || 0,
+      capabilities,
     });
 
     if (r.model_name && !seenIds.has(r.model_name)) {
       seenIds.add(r.model_name);
       data.push(makeEntry(r.model_name));
     }
-
     if (r.alias && !seenIds.has(r.alias)) {
       seenIds.add(r.alias);
       data.push(makeEntry(r.alias));

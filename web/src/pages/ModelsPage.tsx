@@ -6,6 +6,30 @@ import { IconPlus, IconEdit, IconTrash, IconModels, IconSearch, IconRefresh, Ico
 import { useToast } from "../components/Toast";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
+export function inferClientCapabilities(modelName: string): string[] {
+  const name = (modelName || "").toLowerCase();
+  const caps: string[] = [];
+  if (name.includes("4o") || name.includes("vision") || name.includes("vl") || name.includes("gemini") || name.includes("claude-3") || name.includes("pixtral") || name.includes("omni")) {
+    caps.push("vision");
+  }
+  if (name.includes("gpt-4") || name.includes("gpt-3.5") || name.includes("claude-3") || name.includes("gemini") || name.includes("deepseek") || name.includes("qwen")) {
+    caps.push("tool_call");
+  }
+  if (name.includes("r1") || name.includes("reason") || name.includes("thinking") || name.includes("qwq") || name.startsWith("o1") || name.startsWith("o3") || name.includes("claude-3-7") || name.includes("claude-3.7")) {
+    caps.push("reasoning");
+  }
+  if (name.includes("gemini") || name.includes("claude-3") || name.includes("4o") || name.includes("deepseek") || name.includes("qwen") || name.includes("llama-3")) {
+    caps.push("long_context");
+  }
+  if (name.includes("audio") || name.includes("realtime") || name.includes("voice") || name.includes("tts") || name.includes("whisper")) {
+    caps.push("audio");
+  }
+  if (name.includes("code") || name.includes("coder") || name.includes("starcoder") || name.includes("codestral")) {
+    caps.push("code");
+  }
+  return caps;
+}
+
 interface FormState {
   id?: string;
   provider_id: string;
@@ -19,6 +43,14 @@ interface FormState {
   cache_ttl: string;
   enabled: boolean;
   config_json: string;
+  // Enhancements
+  capabilities: string[];
+  routing_strategy: "priority" | "lowest_latency" | "weighted";
+  weight: number;
+  system_prompt: string;
+  system_prompt_mode: "prepend" | "override" | "append";
+  max_tokens_limit: string;
+  model_rewrite: string;
 }
 
 interface ModelsPageData {
@@ -49,6 +81,7 @@ export default function ModelsPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filterProviderId, setFilterProviderId] = useState("");
+  const [filterCapability, setFilterCapability] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<FormState>({
     provider_id: "",
@@ -62,6 +95,13 @@ export default function ModelsPage() {
     cache_ttl: "3600",
     enabled: true,
     config_json: "",
+    capabilities: [],
+    routing_strategy: "priority",
+    weight: 10,
+    system_prompt: "",
+    system_prompt_mode: "prepend",
+    max_tokens_limit: "",
+    model_rewrite: "",
   });
 
   // Table batch selection state
@@ -115,12 +155,26 @@ export default function ModelsPage() {
       cache_ttl: "3600",
       enabled: true,
       config_json: "",
+      capabilities: [],
+      routing_strategy: "priority",
+      weight: 10,
+      system_prompt: "",
+      system_prompt_mode: "prepend",
+      max_tokens_limit: "",
+      model_rewrite: "",
     });
     setShow(true);
     setError("");
   }
 
   function openEdit(m: ModelItem) {
+    let customObj: Record<string, any> = {};
+    if (m.config_json) {
+      try {
+        customObj = JSON.parse(m.config_json);
+      } catch {}
+    }
+
     setForm({
       id: m.id,
       provider_id: m.provider_id,
@@ -134,6 +188,15 @@ export default function ModelsPage() {
       cache_ttl: m.cache_ttl ? String(m.cache_ttl) : "3600",
       enabled: Boolean(m.enabled),
       config_json: m.config_json || "",
+      capabilities: Array.isArray(customObj.capabilities) && customObj.capabilities.length
+        ? customObj.capabilities
+        : inferClientCapabilities(m.model_name),
+      routing_strategy: customObj.routing_strategy || "priority",
+      weight: typeof customObj.weight === "number" ? customObj.weight : 10,
+      system_prompt: customObj.system_prompt || "",
+      system_prompt_mode: customObj.system_prompt_mode || "prepend",
+      max_tokens_limit: customObj.max_tokens_limit ? String(customObj.max_tokens_limit) : "",
+      model_rewrite: customObj.model_rewrite || "",
     });
     setShow(true);
     setError("");
@@ -327,6 +390,18 @@ export default function ModelsPage() {
 
   const filteredItems = items.filter((m) => {
     if (filterProviderId && m.provider_id !== filterProviderId) return false;
+    if (filterCapability) {
+      let customObj: Record<string, any> = {};
+      if (m.config_json) {
+        try {
+          customObj = JSON.parse(m.config_json);
+        } catch {}
+      }
+      const caps = Array.isArray(customObj.capabilities) && customObj.capabilities.length
+        ? customObj.capabilities
+        : inferClientCapabilities(m.model_name);
+      if (!caps.includes(filterCapability)) return false;
+    }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -714,10 +789,37 @@ wire_specification = "openai"
         ) : null}
       </div>
 
+      {/* Feature 4: Capability Quick Filter Chips */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+        <span className="text-slate-400 dark:text-slate-500 font-medium shrink-0 mr-1">能力筛选:</span>
+        {[
+          { key: "", label: "全部模型" },
+          { key: "vision", label: "👁️ 视觉" },
+          { key: "tool_call", label: "🛠️ 工具调用" },
+          { key: "reasoning", label: "🧠 深度思考" },
+          { key: "long_context", label: "⚡ 128K+ 上下文" },
+          { key: "code", label: "💻 代码增强" },
+          { key: "audio", label: "🔊 语音音频" },
+        ].map((tag) => (
+          <button
+            key={tag.key}
+            type="button"
+            onClick={() => setFilterCapability(tag.key)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all cursor-pointer ${
+              filterCapability === tag.key
+                ? "bg-slate-900 text-white dark:bg-blue-600 dark:text-white shadow-xs"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+            }`}
+          >
+            {tag.label}
+          </button>
+        ))}
+      </div>
+
       <Card>
         {filteredItems.length ? (
           <div className="overflow-x-auto -mx-4 -my-4 sm:mx-0 sm:my-0">
-            <table className="w-full text-left text-xs sm:text-sm min-w-[760px]">
+            <table className="w-full text-left text-xs sm:text-sm min-w-[650px]">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 font-medium">
                   <th className="pb-3 px-3 w-8">
@@ -728,7 +830,7 @@ wire_specification = "openai"
                       className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
                     />
                   </th>
-                  <th className="pb-3 px-2 whitespace-nowrap">上游模型名</th>
+                  <th className="pb-3 px-2 whitespace-nowrap">上游模型名 / 能力</th>
                   <th className="pb-3 px-2 whitespace-nowrap">显示名称</th>
                   <th className="pb-3 px-2 whitespace-nowrap">客户端别名</th>
                   <th className="pb-3 px-2 whitespace-nowrap">绑定 Provider</th>
@@ -743,6 +845,16 @@ wire_specification = "openai"
                 {filteredItems.map((m) => {
                   const isSelected = selectedIds.has(m.id);
                   const fallbackModel = m.fallback_model_id ? items.find((x) => x.id === m.fallback_model_id) : null;
+                  let customObj: Record<string, any> = {};
+                  if (m.config_json) {
+                    try {
+                      customObj = JSON.parse(m.config_json);
+                    } catch {}
+                  }
+                  const caps = Array.isArray(customObj.capabilities) && customObj.capabilities.length
+                    ? customObj.capabilities
+                    : inferClientCapabilities(m.model_name);
+
                   return (
                     <tr
                       key={m.id}
@@ -756,7 +868,21 @@ wire_specification = "openai"
                           className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer align-middle"
                         />
                       </td>
-                      <td className="py-3 px-2 font-mono font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">{m.model_name}</td>
+                      <td className="py-3 px-2 whitespace-nowrap">
+                        <div className="font-mono font-medium text-slate-900 dark:text-slate-100">{m.model_name}</div>
+                        {caps.length > 0 && (
+                          <div className="flex items-center gap-1 flex-wrap mt-1">
+                            {caps.map((c) => (
+                              <span
+                                key={c}
+                                className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                              >
+                                {c === "vision" ? "👁️ 视觉" : c === "tool_call" ? "🛠️ 工具" : c === "reasoning" ? "🧠 思考" : c === "long_context" ? "⚡ 128K+" : c === "code" ? "💻 代码" : c === "audio" ? "🔊 音频" : c}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">{m.display_name || "-"}</td>
                       <td className="py-3 px-2 whitespace-nowrap">
                         {m.alias ? <Badge tone="blue">{m.alias}</Badge> : <span className="text-slate-400 dark:text-slate-500">-</span>}
@@ -1091,12 +1217,172 @@ wire_specification = "openai"
             ) : null}
           </div>
 
+          {/* Feature 4: Model Capabilities & Auto-Tagging */}
+          <div className="p-3.5 bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/50 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
+                  <span>🏷️ 模型能力标签 (Capabilities)</span>
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  用于 /v1/models、model-catalog.json 与客户端智能筛选
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs py-1 px-2.5 bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-800"
+                onClick={() => {
+                  const autoCaps = inferClientCapabilities(form.model_name);
+                  setForm({ ...form, capabilities: autoCaps });
+                  toast.success(`已自动识别并勾选 ${autoCaps.length} 项能力标签`);
+                }}
+              >
+                ✨ 智能识别打标
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              {[
+                { key: "vision", label: "👁️ 视觉输入 (Vision)" },
+                { key: "tool_call", label: "🛠️ 函数/工具调用" },
+                { key: "reasoning", label: "🧠 深度思考/推理" },
+                { key: "long_context", label: "⚡ 128K+ 上下文" },
+                { key: "code", label: "💻 代码增强/优化" },
+                { key: "audio", label: "🔊 音频输入/输出" },
+              ].map((cap) => {
+                const checked = form.capabilities.includes(cap.key);
+                return (
+                  <label
+                    key={cap.key}
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer select-none transition-colors ${
+                      checked
+                        ? "bg-sky-100/80 border-sky-300 text-sky-950 dark:bg-sky-900/40 dark:border-sky-700 dark:text-sky-200 font-medium"
+                        : "bg-white/80 border-slate-200 text-slate-600 dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...form.capabilities, cap.key]
+                          : form.capabilities.filter((c) => c !== cap.key);
+                        setForm({ ...form, capabilities: next });
+                      }}
+                    />
+                    <span>{cap.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Feature 2: Smart Routing Strategy & Weights */}
+          <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-xl space-y-3">
+            <div>
+              <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                <span>⚖️ 智能路由与负载均衡策略 (Routing Strategy)</span>
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                当多个 Provider 均提供同名模型或别名时生效
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">分流策略</label>
+                <Select
+                  value={form.routing_strategy}
+                  onChange={(e) => setForm({ ...form, routing_strategy: e.target.value as any })}
+                >
+                  <option value="priority">默认静态优先级 (Priority)</option>
+                  <option value="lowest_latency">⏱️ 智能最低延迟优选 (Lowest Latency)</option>
+                  <option value="weighted">⚖️ 按权重比例分流 (Weighted Random)</option>
+                </Select>
+              </div>
+              {form.routing_strategy === "weighted" && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">分流权重 (Weight)</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    placeholder="10"
+                    value={form.weight}
+                    onChange={(e) => setForm({ ...form, weight: parseInt(e.target.value, 10) || 10 })}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Feature 3: Request Rewrite & Prompt Injection */}
+          <div className="p-3.5 bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-xl space-y-3">
+            <div>
+              <span className="text-xs font-semibold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                <span>✍️ 请求重写与 System Prompt 注入 (Request Rewrite)</span>
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                在转发至上游前自动修改或注入系统提示词与参数
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">默认系统提示词 (System Prompt)</label>
+                  <Textarea
+                    rows={2}
+                    placeholder="例如: You are a helpful expert assistant. Always answer in concise Chinese."
+                    value={form.system_prompt}
+                    onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">提示词注入模式</label>
+                  <Select
+                    value={form.system_prompt_mode}
+                    onChange={(e) => setForm({ ...form, system_prompt_mode: e.target.value as any })}
+                  >
+                    <option value="prepend">前置拼接 (Prepend)</option>
+                    <option value="override">强制覆盖 (Override)</option>
+                    <option value="append">尾部追加 (Append)</option>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">上游实际模型重命名 (Model Rewrite)</label>
+                  <Input
+                    placeholder="如重写为 deepseek-ai/DeepSeek-V3"
+                    value={form.model_rewrite}
+                    onChange={(e) => setForm({ ...form, model_rewrite: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">最大输出 Token 限制 (Max Tokens Clamp)</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="留空则不限制"
+                    value={form.max_tokens_limit}
+                    onChange={(e) => setForm({ ...form, max_tokens_limit: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               高级 JSON 覆盖配置 <span className="text-slate-400 dark:text-slate-500 font-normal">（可选）</span>
             </label>
             <Textarea
-              rows={3}
+              rows={2}
               placeholder="{}"
               value={form.config_json}
               onChange={(e) => setForm({ ...form, config_json: e.target.value })}
@@ -1290,6 +1576,53 @@ wire_specification = "openai"
 }
 
 function serialize(f: FormState) {
+  let customObj: Record<string, any> = {};
+  if (f.config_json && f.config_json.trim()) {
+    try {
+      customObj = JSON.parse(f.config_json);
+    } catch {}
+  }
+
+  if (f.capabilities && f.capabilities.length > 0) {
+    customObj.capabilities = f.capabilities;
+  } else {
+    delete customObj.capabilities;
+  }
+
+  if (f.routing_strategy && f.routing_strategy !== "priority") {
+    customObj.routing_strategy = f.routing_strategy;
+  } else {
+    delete customObj.routing_strategy;
+  }
+
+  if (f.weight && f.weight !== 10) {
+    customObj.weight = Number(f.weight);
+  } else {
+    delete customObj.weight;
+  }
+
+  if (f.system_prompt && f.system_prompt.trim()) {
+    customObj.system_prompt = f.system_prompt.trim();
+    customObj.system_prompt_mode = f.system_prompt_mode || "prepend";
+  } else {
+    delete customObj.system_prompt;
+    delete customObj.system_prompt_mode;
+  }
+
+  if (f.max_tokens_limit && f.max_tokens_limit.trim()) {
+    customObj.max_tokens_limit = parseInt(f.max_tokens_limit, 10);
+  } else {
+    delete customObj.max_tokens_limit;
+  }
+
+  if (f.model_rewrite && f.model_rewrite.trim()) {
+    customObj.model_rewrite = f.model_rewrite.trim();
+  } else {
+    delete customObj.model_rewrite;
+  }
+
+  const finalConfigJson = Object.keys(customObj).length > 0 ? JSON.stringify(customObj, null, 2) : null;
+
   return {
     provider_id: f.provider_id,
     model_name: f.model_name.trim(),
@@ -1301,7 +1634,7 @@ function serialize(f: FormState) {
     cache_enabled: f.cache_enabled,
     cache_ttl: parseInt(f.cache_ttl, 10) || 3600,
     enabled: f.enabled,
-    config_json: f.config_json?.trim() || null,
+    config_json: finalConfigJson,
   };
 }
 
