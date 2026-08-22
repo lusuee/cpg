@@ -1,6 +1,16 @@
 import { Hono } from "hono";
 import type { Env, UsageRow } from "../types";
-import { listUsage, statsSummary, statsByProvider, statsByModel, statsTrend, aggregateDailyStats } from "../db/repo";
+import {
+  listUsage,
+  statsSummary,
+  statsByProvider,
+  statsByModel,
+  statsTrend,
+  aggregateDailyStats,
+  getLatestUsage,
+  statsCacheAnalytics,
+  statsModelLatency,
+} from "../db/repo";
 
 export const usageApp = new Hono<{ Bindings: Env }>();
 
@@ -87,6 +97,37 @@ export function formatUsageCsv(items: UsageRow[]): string {
   return "\uFEFF" + lines.join("\r\n");
 }
 
+usageApp.get("/latest", async (c) => {
+  const afterId = c.req.query("after_id") ? parseInt(c.req.query("after_id")!, 10) : undefined;
+  const limit = c.req.query("limit") ? parseInt(c.req.query("limit")!, 10) : 20;
+  const items = await getLatestUsage(c.env, afterId, limit);
+  return c.json({ items, count: items.length });
+});
+
+usageApp.get("/cache-stats", async (c) => {
+  const range = c.req.query("range") || "today";
+  const tzOffset = getTzOffsetMinutes(c);
+  let since: number;
+  if (range === "7d") since = startOfToday(6, tzOffset);
+  else if (range === "30d") since = startOfToday(29, tzOffset);
+  else since = startOfToday(0, tzOffset);
+
+  const analytics = await statsCacheAnalytics(c.env, since);
+  return c.json(analytics);
+});
+
+usageApp.get("/model-latency", async (c) => {
+  const range = c.req.query("range") || "today";
+  const tzOffset = getTzOffsetMinutes(c);
+  let since: number;
+  if (range === "7d") since = startOfToday(6, tzOffset);
+  else if (range === "30d") since = startOfToday(29, tzOffset);
+  else since = startOfToday(0, tzOffset);
+
+  const benchmark = await statsModelLatency(c.env, since);
+  return c.json({ items: benchmark });
+});
+
 usageApp.get("/export", async (c) => {
   const q = c.req.query();
   const limit = Math.min(parseInt(q.limit || "5000", 10) || 5000, 20000);
@@ -153,7 +194,6 @@ usageApp.get("/stats", async (c) => {
   return c.json({
     range,
     since,
-    tzOffset,
     summary,
     byProvider,
     byModel,
@@ -161,10 +201,10 @@ usageApp.get("/stats", async (c) => {
   });
 });
 
-import { AggregateStatsSchema, zValidator } from "./schemas";
-
-usageApp.post("/aggregate", zValidator("json", AggregateStatsSchema), async (c) => {
-  const data = c.req.valid("json");
-  const res = await aggregateDailyStats(c.env, data.date);
+usageApp.post("/aggregate", async (c) => {
+  const tzOffset = getTzOffsetMinutes(c);
+  const tzModifier = formatSqlTimezoneModifier(tzOffset);
+  const body = (await c.req.json().catch(() => ({}))) as { targetDate?: string };
+  const res = await aggregateDailyStats(c.env, body?.targetDate, tzModifier);
   return c.json({ ok: true, aggregated: res.aggregated });
 });

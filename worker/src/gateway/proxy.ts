@@ -7,8 +7,11 @@ import {
   checkDeviceRateLimit,
   recordUsageSafe,
   randomRequestId,
+  getSetting,
+  getCurrentMonthSpend,
 } from "../db/repo";
 import { ensureSchema } from "../db/schema";
+import { sendWebhookNotification } from "../utils/webhook";
 import { parseUsage } from "./usage";
 import { buildUpstreamHeaders, cleanResponseHeaders } from "../utils/http";
 import {
@@ -30,7 +33,7 @@ const DEFAULT_ENDPOINTS: Record<ProviderType, string> = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
 };
 
-function waitUntil(c: Context<{ Bindings: Env }>, p: Promise<void>) {
+function waitUntil(c: Context<{ Bindings: Env }>, p: Promise<any>) {
   const ctx = (c as any).executionCtx as ExecutionContext | undefined;
   if (ctx?.waitUntil) ctx.waitUntil(p);
   else void p;
@@ -483,6 +486,38 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
     }
   }
 
+  // Monthly Budget Check
+  const budgetCfg = await getSetting<{ monthly_budget_usd: number; budget_action: "warn" | "block"; alert_threshold_pct: number }>(c.env, "budget_config");
+  if (budgetCfg && budgetCfg.monthly_budget_usd > 0) {
+    const currentSpend = await getCurrentMonthSpend(c.env);
+    if (currentSpend >= budgetCfg.monthly_budget_usd) {
+      if (budgetCfg.budget_action === "block") {
+        waitUntil(
+          c,
+          sendWebhookNotification(c.env, {
+            event: "budget_exceeded",
+            title: "🚨【AI Gateway】月度预算已耗尽，已触发自动熔断拦截",
+            message: `本月累计消耗 $${currentSpend.toFixed(2)}，已达到月度预算上限 $${budgetCfg.monthly_budget_usd.toFixed(2)}，后续代理请求已被拦截。`,
+            details: {
+              monthly_budget_usd: budgetCfg.monthly_budget_usd,
+              current_spend_usd: currentSpend,
+              action: "block",
+            },
+          })
+        );
+        return c.json(
+          {
+            error: "monthly_budget_exceeded",
+            message: `Monthly budget limit of $${budgetCfg.monthly_budget_usd.toFixed(2)} has been reached ($${currentSpend.toFixed(2)} spent). Requests are blocked.`,
+            spent_usd: currentSpend,
+            budget_usd: budgetCfg.monthly_budget_usd,
+          },
+          429
+        );
+      }
+    }
+  }
+
   const rawBody = await c.req.text();
   let body: any;
   try {
@@ -557,6 +592,19 @@ export async function handleGatewayProxy(c: Context<{ Bindings: Env }>, kind: "m
   }
 
   if (!response) {
+    waitUntil(
+      c,
+      sendWebhookNotification(c.env, {
+        event: "provider_error",
+        title: `⚠️【AI Gateway】服务商请求异常 (${row.provider_name})`,
+        message: `模型「${row.model_name}」主上游服务商 (${row.provider_name}) 请求失败且无法通过降级恢复。`,
+        details: {
+          model: row.model_name,
+          provider: row.provider_name,
+          requestId,
+        },
+      })
+    );
     return c.json({ error: "upstream_service_unavailable", message: "Failed to fetch response from primary and fallback upstream" }, 502);
   }
 

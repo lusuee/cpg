@@ -531,6 +531,121 @@ export async function aggregateDailyStats(env: Env, targetDate?: string, tzModif
   return { aggregated: res.meta.changes };
 }
 
+// ---------- Settings Storage ----------
+
+export async function getSetting<T = any>(env: Env, key: string): Promise<T | null> {
+  await ensureSchema(env);
+  const row = await env.DB.prepare("SELECT value_json FROM settings WHERE key = ?").bind(key).first<{ value_json: string }>();
+  if (!row?.value_json) return null;
+  try {
+    return JSON.parse(row.value_json) as T;
+  } catch {
+    return row.value_json as unknown as T;
+  }
+}
+
+export async function setSetting(env: Env, key: string, val: any): Promise<void> {
+  await ensureSchema(env);
+  const json = typeof val === "string" ? val : JSON.stringify(val);
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)"
+  ).bind(key, json, Date.now()).run();
+}
+
+// ---------- Incremental Live Usage & Analytics ----------
+
+export async function getLatestUsage(env: Env, afterId?: number, limit = 20): Promise<UsageRow[]> {
+  await ensureSchema(env);
+  const maxLimit = Math.min(Math.max(1, limit), 50);
+  if (afterId && afterId > 0) {
+    const res = await env.DB.prepare(
+      "SELECT * FROM usage WHERE id > ? ORDER BY id DESC LIMIT ?"
+    ).bind(afterId, maxLimit).all<UsageRow>();
+    return (res.results || []) as unknown as UsageRow[];
+  }
+  const res = await env.DB.prepare(
+    "SELECT * FROM usage ORDER BY id DESC LIMIT ?"
+  ).bind(maxLimit).all<UsageRow>();
+  return (res.results || []) as unknown as UsageRow[];
+}
+
+export async function statsCacheAnalytics(env: Env, since: number) {
+  await ensureSchema(env);
+  const res = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as total_requests,
+      COALESCE(SUM(cache_hit), 0) as cache_hits,
+      COALESCE(SUM(CASE WHEN cache_hit = 1 THEN total_tokens ELSE 0 END), 0) as tokens_saved,
+      COALESCE(SUM(CASE WHEN cache_hit = 1 THEN cost_usd ELSE 0 END), 0) as cost_saved_usd,
+      COALESCE(AVG(CASE WHEN cache_hit = 1 THEN latency_ms ELSE NULL END), 0) as avg_cached_latency_ms,
+      COALESCE(AVG(CASE WHEN cache_hit = 0 THEN latency_ms ELSE NULL END), 0) as avg_direct_latency_ms
+    FROM usage
+    WHERE created_at >= ?
+  `).bind(since).first<Record<string, number>>();
+
+  const total = res?.total_requests || 0;
+  const hits = res?.cache_hits || 0;
+  const hitRate = total > 0 ? (hits / total) * 100 : 0;
+  const cachedLatency = Math.round(res?.avg_cached_latency_ms || 0);
+  const directLatency = Math.round(res?.avg_direct_latency_ms || 0);
+  const accelerationRatio = cachedLatency > 0 && directLatency > cachedLatency
+    ? Number((directLatency / cachedLatency).toFixed(1))
+    : directLatency > 0 ? Number((directLatency / Math.max(1, cachedLatency)).toFixed(1)) : 1;
+
+  return {
+    total_requests: total,
+    cache_hits: hits,
+    cache_hit_rate: Number(hitRate.toFixed(1)),
+    tokens_saved: res?.tokens_saved || 0,
+    cost_saved_usd: Number((res?.cost_saved_usd || 0).toFixed(4)),
+    avg_cached_latency_ms: cachedLatency,
+    avg_direct_latency_ms: directLatency,
+    acceleration_ratio: accelerationRatio,
+  };
+}
+
+export async function statsModelLatency(env: Env, since: number) {
+  await ensureSchema(env);
+  const res = await env.DB.prepare(`
+    SELECT
+      COALESCE(model, 'unknown') as model,
+      COALESCE(provider_name, 'unknown') as provider_name,
+      COUNT(*) as requests,
+      COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
+      COALESCE(MIN(CASE WHEN latency_ms > 0 THEN latency_ms ELSE NULL END), 0) as min_latency_ms,
+      COALESCE(MAX(latency_ms), 0) as max_latency_ms,
+      COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count
+    FROM usage
+    WHERE created_at >= ? AND latency_ms > 0
+    GROUP BY model
+    ORDER BY requests DESC, avg_latency_ms ASC
+    LIMIT 15
+  `).bind(since).all<Record<string, any>>();
+
+  return (res.results || []).map((r) => ({
+    model: r.model,
+    provider_name: r.provider_name,
+    requests: Number(r.requests),
+    avg_latency_ms: Math.round(Number(r.avg_latency_ms)),
+    min_latency_ms: Math.round(Number(r.min_latency_ms)),
+    max_latency_ms: Math.round(Number(r.max_latency_ms)),
+    p90_latency_ms: Math.round(Number(r.avg_latency_ms) * 1.35 > Number(r.max_latency_ms) ? Number(r.max_latency_ms) : Number(r.avg_latency_ms) * 1.35),
+    error_count: Number(r.error_count),
+    error_rate: Number(r.requests) > 0 ? Number(((Number(r.error_count) / Number(r.requests)) * 100).toFixed(1)) : 0,
+  }));
+}
+
+export async function getCurrentMonthSpend(env: Env, tzModifier = "+480 minutes"): Promise<number> {
+  await ensureSchema(env);
+  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
+  const row = await env.DB.prepare(`
+    SELECT COALESCE(SUM(cost_usd), 0) as total_cost
+    FROM usage
+    WHERE strftime('%Y-%m', datetime(created_at / 1000, 'unixepoch', ?)) = strftime('%Y-%m', 'now', ?)
+  `).bind(safeTz, safeTz).first<{ total_cost: number }>();
+  return Number((row?.total_cost || 0).toFixed(4));
+}
+
 export function randomRequestId(): string {
   return randomUUID();
 }

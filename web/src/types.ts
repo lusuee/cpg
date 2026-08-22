@@ -83,3 +83,40 @@ export interface StatsResponse {
   trend: { date: string; requests: number; tokens: number; cost_usd?: number }[];
 }
 
+export interface CacheAnalyticsResponse {
+  total_requests: number;
+  cache_hits: number;
+  cache_hit_rate: number;
+  tokens_saved: number;
+  cost_saved_usd: number;
+  avg_cached_latency_ms: number;
+  avg_direct_latency_ms: number;
+  acceleration_ratio: number;
+}
+
+export interface ModelLatencyItem {
+  model: string;
+  provider_name: string;
+  requests: number;
+  avg_latency_ms: number;
+  min_latency_ms: number;
+  max_latency_ms: number;
+  p90_latency_ms: number;
+  error_count: number;
+  error_rate: number;
+}
+
+export interface BudgetConfigResponse {
+  monthly_budget_usd: number;
+  budget_action: "warn" | "block";
+  alert_threshold_pct: number;
+  spent_this_month_usd: number;
+}
+
+export interface WebhookConfigResponse {
+  url: string;
+  events: string[];
+  secret_configured: boolean;
+}
+
+

@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { api } from "../api/client";
-import { Badge, Card, Empty, Spinner, CopyButton } from "../components/ui";
+import type { BudgetConfigResponse, WebhookConfigResponse } from "../types";
+import { Badge, Card, Empty, Spinner, CopyButton, Button, Input, Select } from "../components/ui";
 import { IconTerminal, IconShield, IconZap, IconTrash } from "../components/icons";
 import { useToast } from "../components/Toast";
 import { useQuery } from "../hooks/useQuery";
@@ -31,6 +32,56 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"openai" | "anthropic" | "gemini" | "curl">("openai");
   const [purging, setPurging] = useState(false);
 
+  // Budget State
+  const [budgetForm, setBudgetForm] = useState({
+    monthly_budget_usd: 0,
+    budget_action: "warn" as "warn" | "block",
+    alert_threshold_pct: 80,
+    spent_this_month_usd: 0,
+  });
+  const [savingBudget, setSavingBudget] = useState(false);
+
+  // Webhook State
+  const [webhookForm, setWebhookForm] = useState({
+    url: "",
+    secret: "",
+    events: ["budget_exceeded", "provider_error"],
+  });
+  const [savingWebhook, setSavingWebhook] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+
+  const fetchBudget = useCallback(async () => {
+    return await api.get<BudgetConfigResponse>("/api/settings/budget");
+  }, []);
+
+  const fetchWebhook = useCallback(async () => {
+    return await api.get<WebhookConfigResponse>("/api/settings/webhook");
+  }, []);
+
+  const { data: budgetData, refresh: refreshBudget } = useQuery("budget-data", fetchBudget);
+  const { data: webhookData, refresh: refreshWebhook } = useQuery("webhook-data", fetchWebhook);
+
+  useEffect(() => {
+    if (budgetData) {
+      setBudgetForm({
+        monthly_budget_usd: budgetData.monthly_budget_usd || 0,
+        budget_action: budgetData.budget_action || "warn",
+        alert_threshold_pct: budgetData.alert_threshold_pct || 80,
+        spent_this_month_usd: budgetData.spent_this_month_usd || 0,
+      });
+    }
+  }, [budgetData]);
+
+  useEffect(() => {
+    if (webhookData) {
+      setWebhookForm((prev) => ({
+        ...prev,
+        url: webhookData.url || "",
+        events: webhookData.events || ["budget_exceeded", "provider_error"],
+      }));
+    }
+  }, [webhookData]);
+
   const handlePurgeCache = async () => {
     if (!confirm("确定要清空所有网关缓存吗？此操作将重置内存与 KV 缓存。")) return;
     setPurging(true);
@@ -41,6 +92,65 @@ export default function SettingsPage() {
       toast.error(`清空缓存失败: ${err.message || "未知错误"}`);
     } finally {
       setPurging(false);
+    }
+  };
+
+  const handleSaveBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingBudget(true);
+    try {
+      await api.put("/api/settings/budget", {
+        monthly_budget_usd: Number(budgetForm.monthly_budget_usd) || 0,
+        budget_action: budgetForm.budget_action,
+        alert_threshold_pct: Number(budgetForm.alert_threshold_pct) || 80,
+      });
+      toast.success("月度预算配置已保存");
+      await refreshBudget();
+    } catch (err: any) {
+      toast.error(`保存预算失败: ${err.message || "未知错误"}`);
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
+  const handleSaveWebhook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingWebhook(true);
+    try {
+      await api.put("/api/settings/webhook", {
+        url: webhookForm.url,
+        secret: webhookForm.secret || undefined,
+        events: webhookForm.events,
+      });
+      toast.success("Webhook 告警配置已保存");
+      await refreshWebhook();
+    } catch (err: any) {
+      toast.error(`保存 Webhook 失败: ${err.message || "未知错误"}`);
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
+
+  const handleTestWebhook = async () => {
+    if (!webhookForm.url && !webhookData?.url) {
+      toast.error("请先输入 Webhook 目标 URL");
+      return;
+    }
+    setTestingWebhook(true);
+    try {
+      const res = await api.post<{ ok: boolean; status?: number; error?: string }>("/api/settings/test-webhook", {
+        url: webhookForm.url || undefined,
+        secret: webhookForm.secret || undefined,
+      });
+      if (res.ok) {
+        toast.success(`测试消息已成功发送至 Webhook (HTTP ${res.status || 200})`);
+      } else {
+        toast.error(`测试发送失败: ${res.error || "未知异常"}`);
+      }
+    } catch (err: any) {
+      toast.error(`发送失败: ${err.message || "网络请求超时"}`);
+    } finally {
+      setTestingWebhook(false);
     }
   };
 
@@ -72,79 +182,59 @@ const anthropic = new Anthropic({
 const message = await anthropic.messages.create({
   model: "claude-3-5-sonnet-20241022",
   max_tokens: 1024,
-  messages: [{ role: "user", content: "Hello!" }],
+  messages: [{ role: "user", content: "你好！" }],
 });
 console.log(message.content);`;
 
-  const geminiCode = `import OpenAI from "openai";
-
-// Gemini 在网关中支持通过标准 OpenAI 协议透明中转调用
-const client = new OpenAI({
-  baseURL: "${baseUrl}/v1",
-  apiKey: "YOUR_DEVICE_TOKEN",
-});
-
-const res = await client.chat.completions.create({
-  model: "gemini-1.5-pro", // 或绑定的 Gemini 别名
-  messages: [{ role: "user", content: "Hello Gemini!" }],
-});
-console.log(res.choices[0].message.content);`;
-
-  const curlCode = `curl ${baseUrl}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
+  const geminiCode = `curl "${baseUrl}/v1/chat/completions" \\
   -H "Authorization: Bearer YOUR_DEVICE_TOKEN" \\
+  -H "Content-Type: application/json" \\
   -d '{
-    "model": "claude-3-5-sonnet-20241022",
+    "model": "gemini-2.0-flash",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`;
+
+  const curlCode = `curl "${baseUrl}/v1/models" \\
+  -H "Authorization: Bearer YOUR_DEVICE_TOKEN"`;
+
+  const budgetUsagePercent = budgetForm.monthly_budget_usd > 0
+    ? Math.min(100, Math.round((budgetForm.spent_this_month_usd / budgetForm.monthly_budget_usd) * 100))
+    : 0;
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">系统设置与接入指引</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">查看网关全局环境配置、服务商运行概览及客户端接入代码示例</p>
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">系统设置与配额</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          网关基础环境、月度预算配额控制、自动化 Webhook 告警与多级缓存维护
+        </p>
       </div>
 
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
-        {/* Gateway Meta */}
-        <Card title="网关配置概览" className="lg:col-span-1">
-          <dl className="space-y-3.5 text-xs">
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">应用名称</dt>
-              <dd className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{data?.app_name || "AI Gateway"}</dd>
+        <Card title="网关基础信息">
+          <dl className="space-y-3 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-slate-500 dark:text-slate-400">应用名称</dt>
+              <dd className="font-semibold text-slate-900 dark:text-slate-100">{data?.app_name}</dd>
             </div>
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">Gateway Base URL</dt>
-              <dd className="font-mono text-blue-700 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/50 p-2 rounded-lg break-all mt-1 flex items-center justify-between gap-1">
-                <span className="text-xs">{baseUrl}</span>
-                <CopyButton text={baseUrl} />
-              </dd>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-slate-500 dark:text-slate-400">已接入 Provider</dt>
+              <dd className="font-mono text-slate-900 dark:text-slate-100 font-semibold">{data?.provider_count} 个</dd>
             </div>
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">已配置 Provider 数量</dt>
-              <dd className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{data?.provider_count ?? 0} 个</dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">Cloudflare Access 零信任</dt>
-              <dd className="mt-0.5 flex items-center gap-1.5">
-                <Badge tone={data?.cf_access_configured ? "green" : "slate"} dot>
-                  {data?.cf_access_configured ? "已配置白名单" : "未开启（密码登录）"}
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-slate-500 dark:text-slate-400">Cloudflare Access</dt>
+              <dd>
+                <Badge tone={data?.cf_access_configured ? "green" : "slate"}>
+                  {data?.cf_access_configured ? "已配置白名单" : "未开启"}
                 </Badge>
               </dd>
             </div>
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">KV 响应缓存加速</dt>
-              <dd className="mt-0.5 flex items-center gap-1.5">
-                <Badge tone={data?.kv_cache_configured ? "green" : "blue"} dot>
-                  {data?.kv_cache_configured ? "Cloudflare KV 已就绪" : "内存加速 / KV 可选"}
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-slate-500 dark:text-slate-400">KV 响应缓存</dt>
+              <dd>
+                <Badge tone={data?.kv_cache_configured ? "green" : "slate"}>
+                  {data?.kv_cache_configured ? "CACHE_KV 已绑定" : "内存 LRU"}
                 </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 dark:text-slate-500 font-medium">部署运行环境</dt>
-              <dd className="text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                Cloudflare Workers & D1
               </dd>
             </div>
           </dl>
@@ -188,6 +278,173 @@ console.log(res.choices[0].message.content);`;
           )}
         </Card>
       </div>
+
+      {/* Feature 4: Monthly Budget & Quota Control Card */}
+      <Card title="💰 月度预算配额与超额控制 (Monthly Budget)">
+        <form onSubmit={handleSaveBudget} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                月度总预算上限 (USD $)
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0 为不限制"
+                value={budgetForm.monthly_budget_usd || ""}
+                onChange={(e) => setBudgetForm({ ...budgetForm, monthly_budget_usd: parseFloat(e.target.value) || 0 })}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">设为 0 表示不设预算上限</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                超额处理策略
+              </label>
+              <Select
+                value={budgetForm.budget_action}
+                onChange={(e) => setBudgetForm({ ...budgetForm, budget_action: e.target.value as any })}
+              >
+                <option value="warn">⚠️ 仅发 Webhook 告警 (不阻断请求)</option>
+                <option value="block">🚫 自动熔断拦截 (超额返回 429 停止扣费)</option>
+              </Select>
+              <p className="text-[11px] text-slate-400 mt-1">预算用尽时网关执行的操作</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                预警百分比阈值 (%)
+              </label>
+              <Input
+                type="number"
+                min="10"
+                max="99"
+                value={budgetForm.alert_threshold_pct}
+                onChange={(e) => setBudgetForm({ ...budgetForm, alert_threshold_pct: parseInt(e.target.value, 10) || 80 })}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">达到该百分比自动发送 Webhook 提醒</p>
+            </div>
+          </div>
+
+          {/* Month Spend Progress Bar */}
+          {budgetForm.monthly_budget_usd > 0 && (
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="text-slate-600 dark:text-slate-300">
+                  本月累计消耗: <strong className="text-slate-900 dark:text-slate-100 font-mono">${budgetForm.spent_this_month_usd.toFixed(2)}</strong> / ${budgetForm.monthly_budget_usd.toFixed(2)}
+                </span>
+                <span className={`font-mono font-bold ${budgetUsagePercent >= 100 ? "text-rose-600" : budgetUsagePercent >= 80 ? "text-amber-600" : "text-emerald-600"}`}>
+                  {budgetUsagePercent}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    budgetUsagePercent >= 100 ? "bg-rose-500" : budgetUsagePercent >= 80 ? "bg-amber-500" : "bg-emerald-500"
+                  }`}
+                  style={{ width: `${budgetUsagePercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button size="sm" type="submit" disabled={savingBudget} className="shadow-xs">
+              {savingBudget ? "正在保存…" : "保存预算策略"}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* Feature 5: Webhook Notifications Card */}
+      <Card title="🔔 Webhook 告警与通知 (Alert Notifications)">
+        <form onSubmit={handleSaveWebhook} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Webhook 目标 URL
+              </label>
+              <Input
+                type="url"
+                placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+                value={webhookForm.url}
+                onChange={(e) => setWebhookForm({ ...webhookForm, url: e.target.value })}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                支持<strong>飞书、钉钉、企业微信、Slack、Discord</strong>及自定义 Webhook
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Secret 签名密钥 (可选)
+              </label>
+              <Input
+                type="password"
+                placeholder={webhookData?.secret_configured ? "已配置 (留空保持不变)" : "可选 HMAC 签名 Token"}
+                value={webhookForm.secret}
+                onChange={(e) => setWebhookForm({ ...webhookForm, secret: e.target.value })}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">用于请求头 X-Webhook-Secret 校验</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              触发通知的事件类型
+            </label>
+            <div className="flex flex-wrap gap-4 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={webhookForm.events.includes("budget_exceeded")}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...webhookForm.events, "budget_exceeded"]
+                      : webhookForm.events.filter((ev) => ev !== "budget_exceeded");
+                    setWebhookForm({ ...webhookForm, events: next });
+                  }}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>月度预算超额 / 达到预警阈值</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={webhookForm.events.includes("provider_error")}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...webhookForm.events, "provider_error"]
+                      : webhookForm.events.filter((ev) => ev !== "provider_error");
+                    setWebhookForm({ ...webhookForm, events: next });
+                  }}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>上游服务商 5xx 故障与降级失败</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTestWebhook}
+              disabled={testingWebhook || !webhookForm.url}
+              className="text-xs"
+            >
+              {testingWebhook ? "正在测试…" : "🧪 测试发送消息"}
+            </Button>
+
+            <Button size="sm" type="submit" disabled={savingWebhook} className="shadow-xs">
+              {savingWebhook ? "正在保存…" : "保存 Webhook 配置"}
+            </Button>
+          </div>
+        </form>
+      </Card>
 
       {/* Cache Acceleration & Maintenance */}
       <Card title="多级响应缓存优化 (Multi-Tier Caching)">
