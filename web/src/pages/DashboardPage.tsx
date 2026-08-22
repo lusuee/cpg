@@ -18,13 +18,29 @@ export default function DashboardPage() {
   const isDark = resolvedTheme === "dark";
 
   const fetchDashboard = useCallback(async (): Promise<DashboardData> => {
-    const [today, d7, d30, usage, settings] = await Promise.all([
+    const [todayRes, d7Res, d30Res, usageRes, settingsRes] = await Promise.allSettled([
       api.get<StatsResponse>("/api/usage/stats?range=today"),
       api.get<StatsResponse>("/api/usage/stats?range=7d"),
       api.get<StatsResponse>("/api/usage/stats?range=30d"),
       api.get<{ items: UsageItem[] }>("/api/usage?limit=8"),
-      api.get<{ gateway_base_url: string }>("/api/settings").catch(() => ({ gateway_base_url: "" })),
+      api.get<{ gateway_base_url: string }>("/api/settings"),
     ]);
+
+    const emptyStats: StatsResponse = {
+      range: "today",
+      since: Date.now(),
+      summary: { request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0, avg_latency_ms: 0, error_count: 0, cache_hit_count: 0 },
+      byProvider: [],
+      byModel: [],
+      trend: [],
+    };
+
+    const today = todayRes.status === "fulfilled" ? todayRes.value : emptyStats;
+    const d7 = d7Res.status === "fulfilled" ? d7Res.value : { ...emptyStats, range: "7d" };
+    const d30 = d30Res.status === "fulfilled" ? d30Res.value : { ...emptyStats, range: "30d" };
+    const usage = usageRes.status === "fulfilled" ? usageRes.value : { items: [] };
+    const settings = settingsRes.status === "fulfilled" ? settingsRes.value : { gateway_base_url: "" };
+
     return {
       stats: { today, d7, d30 },
       recent: usage.items || [],

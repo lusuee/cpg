@@ -64,6 +64,9 @@ export const INIT_STATEMENTS = [
     value_json TEXT,
     updated_at INTEGER
   )`,
+  `CREATE INDEX IF NOT EXISTS idx_models_model_lookup ON models (model_name, enabled)`,
+  `CREATE INDEX IF NOT EXISTS idx_models_alias_lookup ON models (alias, enabled)`,
+  `CREATE INDEX IF NOT EXISTS idx_models_provider_id ON models (provider_id)`,
   `CREATE TABLE IF NOT EXISTS daily_stats (
     date TEXT NOT NULL,
     device_id TEXT,
@@ -95,6 +98,9 @@ const MIGRATION_ALTERS = [
   "ALTER TABLE usage ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE daily_stats ADD COLUMN cache_hit_count INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE daily_stats ADD COLUMN cost_saved_usd REAL NOT NULL DEFAULT 0",
+  "CREATE INDEX IF NOT EXISTS idx_models_model_lookup ON models (model_name, enabled)",
+  "CREATE INDEX IF NOT EXISTS idx_models_alias_lookup ON models (alias, enabled)",
+  "CREATE INDEX IF NOT EXISTS idx_models_provider_id ON models (provider_id)",
 ];
 
 let schemaInitialized = false;

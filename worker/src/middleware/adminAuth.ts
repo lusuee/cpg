@@ -3,17 +3,13 @@ import type { Env } from "../types";
 import { verifySession } from "../utils/crypto";
 
 export const adminAuth: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
-  // Check Cloudflare Access authenticated email header first
+  // Check Cloudflare Access authenticated email header ONLY if whitelist is explicitly configured
   const cfAccessEmail = c.req.header("Cf-Access-Authenticated-User-Email");
-  if (cfAccessEmail) {
-    const allowedEmailsStr = c.env.CF_ACCESS_ALLOWED_EMAILS;
-    if (allowedEmailsStr) {
-      const allowed = allowedEmailsStr.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-      if (allowed.includes(cfAccessEmail.toLowerCase())) {
-        return next();
-      }
-    } else {
-      // If CF Access is active in front of worker and no specific email whitelist configured, allow through
+  const allowedEmailsStr = c.env.CF_ACCESS_ALLOWED_EMAILS;
+
+  if (cfAccessEmail && allowedEmailsStr) {
+    const allowed = allowedEmailsStr.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+    if (allowed.length > 0 && allowed.includes(cfAccessEmail.toLowerCase())) {
       return next();
     }
   }
@@ -28,4 +24,5 @@ export const adminAuth: MiddlewareHandler<{ Bindings: Env }> = async (c, next) =
   }
   await next();
 };
+
 

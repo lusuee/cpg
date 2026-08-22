@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, setUnauthorizedHandler } from "../api/client";
 
 interface AuthContextValue {
   loading: boolean;
@@ -15,11 +15,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
+    setUnauthorizedHandler(() => setAuthenticated(false));
     api
       .get<{ ok: boolean }>("/api/auth/me")
       .then(() => setAuthenticated(true))
       .catch(() => setAuthenticated(false))
       .finally(() => setLoading(false));
+
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   const login = useCallback(async (password: string) => {

@@ -6,6 +6,13 @@ export class ApiError extends Error {
   }
 }
 
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const tzOffset = String(new Date().getTimezoneOffset());
   const res = await fetch(path, {
@@ -18,6 +25,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/me")) {
+      unauthorizedHandler?.();
+    }
     let data: { error?: string; message?: string } | null = null;
     try {
       data = await res.json();

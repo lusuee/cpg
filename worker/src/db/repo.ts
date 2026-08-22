@@ -104,14 +104,26 @@ export async function batchUpdateProviders(env: Env, ids: string[], data: { enab
 export async function batchDeleteProviders(env: Env, ids: string[]): Promise<{ deleted: number; skipped: number }> {
   if (!ids.length) return { deleted: 0, skipped: 0 };
   await ensureSchema(env);
-  let deleted = 0;
-  let skipped = 0;
-  for (const id of ids) {
-    const ok = await deleteProvider(env, id);
-    if (ok) deleted++;
-    else skipped++;
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const usedRes = await env.DB.prepare(
+    `SELECT DISTINCT provider_id FROM models WHERE provider_id IN (${placeholders})`
+  ).bind(...ids).all<{ provider_id: string }>();
+
+  const usedSet = new Set((usedRes.results || []).map((r) => r.provider_id));
+  const deletableIds = ids.filter((id) => !usedSet.has(id));
+  const skipped = ids.length - deletableIds.length;
+
+  if (deletableIds.length === 0) {
+    return { deleted: 0, skipped };
   }
-  return { deleted, skipped };
+
+  const deletePlaceholders = deletableIds.map(() => "?").join(", ");
+  const delRes = await env.DB.prepare(
+    `DELETE FROM providers WHERE id IN (${deletePlaceholders})`
+  ).bind(...deletableIds).run();
+
+  return { deleted: delRes.meta.changes, skipped };
 }
 
 // ---------- Models ----------
@@ -484,18 +496,20 @@ export async function recordUsageSafe(env: Env, data: Parameters<typeof insertUs
 
 export async function aggregateDailyStats(env: Env, targetDate?: string, tzModifier = "+480 minutes"): Promise<{ aggregated: number }> {
   await ensureSchema(env);
+  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
+  const cutoffTime = Date.now() - 2 * 24 * 60 * 60 * 1000;
+
   const dateClause = targetDate
     ? "strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', ?)) = ?"
-    : "created_at >= " + (Date.now() - 2 * 24 * 60 * 60 * 1000);
+    : "created_at >= ?";
 
-  const safeTz = tzModifier.replace(/[^a-zA-Z0-9+\- ]/g, "");
   const sql = `
     INSERT OR REPLACE INTO daily_stats (date, device_id, provider_id, model, request_count, input_tokens, output_tokens, total_tokens, cost_usd, cache_hit_count, cost_saved_usd, avg_latency_ms, error_count)
     SELECT 
       strftime('%Y-%m-%d', datetime(created_at / 1000, 'unixepoch', '${safeTz}')) as date,
-      device_id,
-      provider_id,
-      model,
+      COALESCE(device_id, '') as device_id,
+      COALESCE(provider_id, '') as provider_id,
+      COALESCE(model, '') as model,
       COUNT(*) as request_count,
       COALESCE(SUM(input_tokens), 0) as input_tokens,
       COALESCE(SUM(output_tokens), 0) as output_tokens,
@@ -507,10 +521,12 @@ export async function aggregateDailyStats(env: Env, targetDate?: string, tzModif
       COALESCE(SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END), 0) as error_count
     FROM usage
     WHERE ${dateClause}
-    GROUP BY date, device_id, provider_id, model
+    GROUP BY date, COALESCE(device_id, ''), COALESCE(provider_id, ''), COALESCE(model, '')
   `;
 
-  const stmt = targetDate ? env.DB.prepare(sql).bind(targetDate) : env.DB.prepare(sql);
+  const stmt = targetDate
+    ? env.DB.prepare(sql).bind(targetDate)
+    : env.DB.prepare(sql).bind(cutoffTime);
   const res = await stmt.run();
   return { aggregated: res.meta.changes };
 }

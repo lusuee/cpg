@@ -112,6 +112,8 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
 
   const shouldCache = upstreamRes.ok && Boolean(ctx.row.cache_enabled) && Boolean(ctx.cacheKey);
   let streamText = "";
+  let headBuffer = "";
+  let usageChunks = "";
   let cacheDisabledDueToSize = false;
   let resolveDone: () => void = () => {};
   const donePromise = new Promise<void>((resolve) => { resolveDone = resolve; });
@@ -120,6 +122,17 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   const transform = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       const decoded = decoder.decode(chunk, { stream: true });
+
+      // Capture head buffer for Anthropic message_start (up to MAX_TAIL_BYTES)
+      if (headBuffer.length < MAX_TAIL_BYTES) {
+        headBuffer += decoded;
+      }
+
+      // Capture any intermediate SSE lines mentioning usage/tokens
+      if (decoded.includes("usage") || decoded.includes("tokens")) {
+        usageChunks += decoded;
+      }
+
       streamText += decoded;
 
       if (shouldCache && !cacheDisabledDueToSize) {
@@ -139,7 +152,11 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
     },
     flush() {
       const finalChunk = decoder.decode();
-      if (finalChunk) streamText += finalChunk;
+      if (finalChunk) {
+        streamText += finalChunk;
+        if (headBuffer.length < MAX_TAIL_BYTES) headBuffer += finalChunk;
+        if (finalChunk.includes("usage") || finalChunk.includes("tokens")) usageChunks += finalChunk;
+      }
       resolveDone();
     },
   });
@@ -151,7 +168,8 @@ function passthroughStream(ctx: ProxyContext, upstreamRes: Response): Response {
   waitUntil(
     ctx.c,
     donePromise.then(async () => {
-      const usage = parseUsage(ctx.row.provider_type, streamText);
+      const combinedUsageText = `${headBuffer}\n${usageChunks}\n${streamText}`;
+      const usage = parseUsage(ctx.row.provider_type, combinedUsageText);
       await record(ctx, usage, upstreamRes.status);
 
       // Asynchronously cache on 200 OK if cache is enabled and within size limit
@@ -257,7 +275,7 @@ async function executeProxyAttempt(
       return null;
     }
 
-    if (!upstreamRes.ok && upstreamRes.status >= 500) {
+    if (!upstreamRes.ok && (upstreamRes.status >= 500 || upstreamRes.status === 429)) {
       return null;
     }
 
@@ -372,8 +390,6 @@ async function executeProxyAttempt(
         return c.json(responsesJson, 200);
       }
     }
-
-    if (isStream) return passthroughStream(pctx, upstreamRes);
 
     const text = await upstreamRes.text();
     pctx.latencyMs = Date.now() - startedAt;

@@ -174,3 +174,59 @@ describe("Admin Zod Schemas Validation", () => {
     });
   });
 });
+
+describe("Cloudflare Access Header Authentication & Security", () => {
+  it("rejects spoofed CF-Access header when CF_ACCESS_ALLOWED_EMAILS is not configured", async () => {
+    const { adminAuth } = await import("../src/middleware/adminAuth");
+    let nextCalled = false;
+    const mockContext: any = {
+      req: {
+        header: (k: string) => (k.toLowerCase() === "cf-access-authenticated-user-email" ? "attacker@example.com" : undefined),
+      },
+      env: {
+        ADMIN_SECRET: "admin123",
+      },
+      json: (data: any, status?: number) => ({ data, status }),
+    };
+
+    const res: any = await adminAuth(mockContext, async () => { nextCalled = true; });
+    expect(nextCalled).toBe(false);
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts CF-Access header when email is in CF_ACCESS_ALLOWED_EMAILS whitelist", async () => {
+    const { adminAuth } = await import("../src/middleware/adminAuth");
+    let nextCalled = false;
+    const mockContext: any = {
+      req: {
+        header: (k: string) => (k.toLowerCase() === "cf-access-authenticated-user-email" ? "admin@mycompany.com" : undefined),
+      },
+      env: {
+        ADMIN_SECRET: "admin123",
+        CF_ACCESS_ALLOWED_EMAILS: "dev@mycompany.com, admin@mycompany.com",
+      },
+      json: (data: any, status?: number) => ({ data, status }),
+    };
+
+    await adminAuth(mockContext, async () => { nextCalled = true; });
+    expect(nextCalled).toBe(true);
+  });
+});
+
+describe("Streaming Token Parsing with Head and Tail chunks", () => {
+  it("correctly parses input_tokens from head chunk and output_tokens from tail chunk", async () => {
+    const { parseUsage } = await import("../src/gateway/usage");
+    const headChunk = 'data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":125}}}\n';
+    const middleChunk = 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"processing..."}}\n';
+    const tailChunk = 'data: {"type":"message_delta","usage":{"output_tokens":88}}\ndata: {"type":"message_stop"}\n';
+
+    const combinedText = `${headChunk}\n${middleChunk}\n${tailChunk}`;
+    const usage = parseUsage("anthropic", combinedText);
+
+    expect(usage).not.toBeNull();
+    expect(usage?.input_tokens).toBe(125);
+    expect(usage?.output_tokens).toBe(88);
+    expect(usage?.total_tokens).toBe(213);
+  });
+});
+

@@ -134,7 +134,7 @@ providersApp.post("/:id/fetch-models", async (c) => {
     headers["anthropic-version"] = "2023-06-01";
   } else if (p.type === "gemini") {
     headers["x-goog-api-key"] = upstreamKey;
-    modelsUrl = `${endpoint}/models?key=${encodeURIComponent(upstreamKey)}`;
+    headers["Authorization"] = `Bearer ${upstreamKey}`;
   } else {
     headers["Authorization"] = `Bearer ${upstreamKey}`;
   }

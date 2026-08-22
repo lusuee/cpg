@@ -14,7 +14,7 @@ interface SettingsData {
     id: string;
     name: string;
     type: string;
-    enabled: boolean;
+    enabled: boolean | number;
     api_key_configured?: boolean;
     secret_configured: boolean;
   }>;
