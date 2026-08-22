@@ -6,9 +6,21 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workerDir = path.join(root, "worker");
-const wranglerCli = path.join(workerDir, "node_modules", "wrangler", "wrangler-dist", "cli.js");
 const wranglerToml = path.join(workerDir, "wrangler.toml");
 const deployEnvFile = path.join(root, "deploy.env");
+
+function getWranglerCli() {
+  const candidates = [
+    path.join(workerDir, "node_modules", "wrangler", "wrangler-dist", "cli.js"),
+    path.join(workerDir, "node_modules", "wrangler", "bin", "wrangler.js"),
+    path.join(root, "node_modules", "wrangler", "wrangler-dist", "cli.js"),
+    path.join(root, "node_modules", "wrangler", "bin", "wrangler.js"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return path.join(workerDir, "node_modules", "wrangler", "wrangler-dist", "cli.js");
+}
 
 const D1_NAME = "personal-ai-gateway";
 const PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000";
@@ -35,7 +47,7 @@ function loadEnv() {
 
   // Merge process.env (GitHub Actions secrets/variables take precedence)
   for (const [key, value] of Object.entries(process.env)) {
-    if (value && (key.endsWith("_KEY") || key.endsWith("_SECRET") || VAR_KEYS.includes(key) || key === "D1_DATABASE_ID")) {
+    if (value && (key.endsWith("_KEY") || key.endsWith("_SECRET") || VAR_KEYS.includes(key) || key === "D1_DATABASE_ID" || key.startsWith("CLOUDFLARE_"))) {
       env[key] = value;
     }
   }
@@ -43,6 +55,7 @@ function loadEnv() {
 }
 
 function runWrangler(args, { input, cwd = workerDir } = {}) {
+  const wranglerCli = getWranglerCli();
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [wranglerCli, ...args], {
       cwd,
@@ -184,6 +197,17 @@ async function setSecrets(env) {
 
 async function main() {
   const env = loadEnv();
+
+  if ((process.env.CI || process.env.GITHUB_ACTIONS) && !process.env.CLOUDFLARE_API_TOKEN && !env.CLOUDFLARE_API_TOKEN) {
+    console.error("\n❌ [部署错误 / Deploy Error]: 缺少 CLOUDFLARE_API_TOKEN 环境变量！");
+    console.error("👉 原因：在 GitHub Actions 等非交互式 CI/CD 环境中，Wrangler 无法弹出浏览器交互式登录，必须配置 CLOUDFLARE_API_TOKEN 令牌进行鉴权。");
+    console.error("👉 解决方法：");
+    console.error("   1. 前往 Cloudflare API Tokens 页面: https://dash.cloudflare.com/profile/api-tokens");
+    console.error("   2. 点击 'Create Token'，选择 'Edit Cloudflare Workers' 模板，并在 Permissions 中确保包含 'Account - D1 - Edit' 权限后创建。");
+    console.error("   3. 前往 GitHub 仓库: Settings -> Secrets and variables -> Actions -> 点击 'New repository secret'");
+    console.error("   4. Name 填入: CLOUDFLARE_API_TOKEN，Secret 填入生成的 Token 字符串，保存后重新触发部署即可！\n");
+    throw new Error("Missing CLOUDFLARE_API_TOKEN in CI environment");
+  }
 
   logStep("Building web dashboard");
   runPnpm(["build:web"]);
