@@ -1,239 +1,320 @@
-# Cloudflare 个人 AI Gateway V1 MVP
+# Cloudflare Personal AI Gateway (CPG)
 
-单管理员、单租户的个人 AI 网关，使用一个 Cloudflare Worker 同时提供：
+<p align="center">
+  <img src="https://img.shields.io/badge/Cloudflare-Workers_%26_D1-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare" />
+  <img src="https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white" alt="Hono" />
+  <img src="https://img.shields.io/badge/React_18-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
+</p>
 
-- 管理 API（`/api/*`）与 Web Dashboard（React + Vite + Tailwind + Recharts，通过 Workers Static Assets 托管）。
-- AI Gateway API（`/v1/*`）：V1 支持 Anthropic Messages 和 OpenAI-compatible Chat Completions。
-  - 设备 Token 鉴权，兼容 `Authorization: Bearer <token>` 与 Anthropic SDK 的 `x-api-key`。
-  - 非流式与流式 SSE 透明转发。
-  - 用量记录写入 D1，用于 Dashboard 统计；D1 写失败不影响上游响应。
+<p align="center">
+  <b>完全运行在 Cloudflare 边缘网络上的现代化、高性能、轻量级个人 AI 网关与控制台。</b><br>
+  单个 Worker 同时承载高性能 API 转发网关与现代化 React Web Dashboard，零服务器成本，毫秒级冷启动。
+</p>
 
-## 仓库结构
+---
+
+## 🌟 核心特性
+
+- 🌐 **All-in-One 边缘原生架构**
+  - **Worker + D1 + Static Assets**：无需自建服务器或 Docker，单个 Cloudflare Worker 同时托管 API 网关与 React Web 仪表盘。
+  - **D1 分布式数据库**：持久化存储服务商、模型映射、设备 Token、实时用量及每日聚合数据。
+- ⚡ **多协议支持与透明代理 (`/v1/*`)**
+  - **OpenAI 兼容协议**：`/v1/chat/completions` 与 `/chat/completions`。
+  - **Anthropic 协议**：`/v1/messages` 与 `/messages`。
+  - **Google Gemini 支持**：原生 OpenAI 端点中转，支持 `usageMetadata` Token 解析。
+  - **流式 (SSE) 与非流式透明透传**：毫秒级响应，流式尾部轻量解析 Token 消耗。
+  - **模型别名映射 (Alias)**：支持设置快捷别名（如将 `gpt4` 映射到 `gpt-4o`，`claude` 映射到 `claude-3-5-sonnet-20241022`）。
+  - **标准模型列表**：提供 `GET /v1/models`，无缝兼容 Codex、Cursor、Continue、Cherry Studio、NextChat 等客户端。
+- 🔀 **高级路由与负载调度**
+  - **直连模式 (Direct)**：单模型直接转发。
+  - **多级降级链 (Fallback Chain)**：主模型遭遇 `5xx` 故障或 `429` 限流时，按列表自动依次降级重试备用模型。
+  - **加权负载分流 (Weighted)**：按设定的权重比例分发流量，故障时自动调度到池内其他候选模型。
+- 🔑 **多 Key 轮询与限流重试 (Multi-Key Pooling)**
+  - 支持多账号/多密钥池化（逗号分隔 Secret 变量名或 JSON 配置密钥池）。
+  - 自动打散请求；单个 Key 触发上游限流或配额耗尽时，自动换 Key 重试。
+- 🛡️ **设备 Token 鉴权与零信任集成**
+  - **设备隔离**：每台设备独立签发 `ccs_` 前缀 Token（数据库仅保存 SHA-256 哈希，一键撤销）。
+  - **速率限制 (RPM)**：支持按设备配置每分钟请求上限（滑动窗口检测）。
+  - **Cloudflare Access 零信任**：支持基于 `Cf-Access-Authenticated-User-Email` 白名单免密单点登录。
+- 📊 **精细用量监控与多维统计分析**
+  - **实时费用估算**：支持配置模型输入/输出 Token 单价（$/1M Tokens），精确记录每笔调用预估成本。
+  - **延迟分位数统计**：支持 P50、P90、P99、Min、Max 延迟分位数分析。
+  - **多维分析报表**：设备使用排行、HTTP 错误状态码分布统计。
+  - **数据导出**：支持一键导出 CSV / JSON 格式用量明细文件。
+- 🔄 **备份恢复与 CC Switch 互转**
+  - **全量快照备份**：一键导出/导入包含全部配置的 JSON 快照（支持增量合并或完全覆盖）。
+  - **CC Switch / OneAPI 双向导入导出**：无缝迁移现有规则与配置。
+  - **自动化归档与日志清理**：每日定时 Cron 任务自动聚合历史数据，支持自定义保留天数（15/30/60/90 天）一键清理。
+
+---
+
+## 🏗️ 项目架构
 
 ```
 .
-├── worker/                 # Cloudflare Worker (Hono + TypeScript)
-│   ├── migrations/0001_init.sql
+├── worker/                     # Cloudflare Worker 后端 (Hono + TypeScript)
+│   ├── migrations/             # D1 数据库 SQL 迁移文件 (0001_init, 0002_phase2, 0003_phase3)
 │   ├── src/
-│   │   ├── admin/          # 管理 API
-│   │   ├── gateway/        # AI Gateway 鉴权 / 代理 / usage 解析
-│   │   ├── middleware/     # 管理端会话
-│   │   ├── db/repo.ts      # D1 查询与统计
-│   │   └── index.ts        # Worker 入口
-│   └── test/               # vitest 单元测试
-├── web/                    # React Dashboard
-│   └── src/pages/          # Login/Dashboard/Providers/Models/Devices/Usage/Settings
-└── pnpm-workspace.yaml
+│   │   ├── admin/              # 管理后台 API (/api/*)
+│   │   ├── gateway/            # 网关路由、代理透传、多 Key 轮询、降级与 Token 解析
+│   │   ├── middleware/         # Admin 会话鉴权与 Cloudflare Access 中间件
+│   │   ├── db/                 # D1 数据库 Schema 与数据访问层 (repo.ts)
+│   │   ├── utils/              # 加密、HTTP 头构建、辅助函数
+│   │   └── index.ts            # Worker 入口与定时任务 (Cron) 处理器
+│   ├── test/                   # Vitest 单元测试套件
+│   └── wrangler.toml           # Cloudflare Worker 配置文件
+├── web/                        # React SPA 管理后台前端
+│   ├── src/
+│   │   ├── pages/              # Dashboard/Providers/Models/Devices/Usage/Settings
+│   │   ├── components/         # UI 基础组件库与图表
+│   │   └── api/                # 前端 API 客户端封装
+├── scripts/                    # 一键全自动部署与配置脚本 (deploy.mjs, prepare-config.mjs)
+├── deploy.env.example          # 部署环境变量模板
+└── pnpm-workspace.yaml         # pnpm monorepo 配置
 ```
 
-## 快速开始
+---
 
-前置条件：Node.js、pnpm、Wrangler CLI（或已登录的 `wrangler login`）。
+## 🚀 快速开始与部署
+
+### 1. 前置准备
+
+- 安装 [Node.js](https://nodejs.org/) (>= 18.0.0) 和 [pnpm](https://pnpm.io/) (>= 9.0.0)。
+- 登录 Cloudflare 账号：
+  ```bash
+  npx wrangler login
+  ```
+
+### 2. 本地开发调试
 
 ```bash
-# 1. 安装依赖
+# 安装依赖
 pnpm install
 
-# 2. 本地开发
-pnpm dev:worker        # wrangler dev，监听 8787
-pnpm dev:web           # Vite dev server，代理 /api、/v1 到 wrangler dev
+# 本地运行 Worker (监听 8787 端口)
+pnpm dev:worker
 
-# 3. 本地 D1 迁移（首次）
-pnpm db:migrate:local
+# 在另一个终端启动前端 Vite 开发服务器 (自动代理 /api 和 /v1)
+pnpm dev:web
 ```
 
-登录管理端至少需要两个 Secret：`ADMIN_SECRET`（登录密码）和 `SESSION_SECRET`（会话签名密钥）。
+---
 
-## 配置 Secrets（部署时统一从 deploy.env 读取）
+## 🚢 一键全自动部署到 Cloudflare
 
-把 `deploy.env.example` 复制为 `deploy.env`（已在 `.gitignore` 中，不会提交），按需填写：
+本项目提供了全自动化的部署流程，自动完成 **前端构建 ➔ D1 数据库创建与绑定 ➔ 远程数据库迁移 ➔ 密钥注入 ➔ Worker 与静态资源部署**。
 
-```ini
-# D1：在 Cloudflare 后台创建数据库后，把 id 填到这一项
-D1_DATABASE_ID=
-
-# 管理端登录密码与会话签名密钥（必须）
-ADMIN_SECRET=change-me
-SESSION_SECRET=generate-a-long-random-string
-
-# 展示在 Dashboard 的网关地址
-GATEWAY_BASE_URL=https://ai.example.com
-
-# 上游 Provider Key，按需填写
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-- Provider 表中的 `secret_name` 必须对应 Worker 环境变量/Secret 名称（例如 `OPENAI_API_KEY`）。
-- Provider 创建/编辑后 Dashboard 会显示是否已配置对应 Secret。
-
-## 快速部署到 Cloudflare
-
-### 一键全自动部署
+### 步骤 1：复制并填写部署配置文件
 
 ```bash
-# 1. 复制部署配置
 cp deploy.env.example deploy.env
-# 填写 ADMIN_SECRET 与 SESSION_SECRET（D1_DATABASE_ID 留空即可，脚本会自动创建与绑定）
+```
 
-# 2. 执行一键部署（自动：build web → 自动创建/查询 D1 数据库 → 注入 D1 id/vars → 自动迁移 → 上传 Secrets → 部署 Worker）
+编辑 `deploy.env` 文件（该文件已被 `.gitignore` 忽略，安全不泄露）：
+
+```ini
+# ==========================================
+# 必填项：管理后台登录密码与会话密钥
+# ==========================================
+ADMIN_SECRET=你的管理后台密码
+SESSION_SECRET=生成一个至少32位的随机安全字符串
+
+# ==========================================
+# 可选项：网关自定义域名与 D1 数据库
+# ==========================================
+# 展示在控制台的网关地址（默认为 https://ai.example.com，部署后可填入你的实际域名或 workers.dev 地址）
+GATEWAY_BASE_URL=https://cpg.your-subdomain.workers.dev
+APP_NAME=Personal AI Gateway
+
+# D1 数据库 ID：留空即可！部署脚本会自动在你的 Cloudflare 账户下创建并绑定
+# D1_DATABASE_ID=
+
+# ==========================================
+# 可选项：上游服务商 API Key（也可在部署后通过后台或 wrangler secret 配置）
+# ==========================================
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIzaSy...
+
+# 多 Key 示例（支持逗号分隔多个 Secret 名称，或额外定义）
+# OPENAI_API_KEY_1=sk-key-1
+# OPENAI_API_KEY_2=sk-key-2
+```
+
+### 步骤 2：执行一键部署命令
+
+```bash
 pnpm deploy
 ```
 
-部署脚本会从 `deploy.env`（或真实环境变量）读取：
+> **自动化部署脚本执行步骤**：
+> 1. 执行 `pnpm build:web` 构建前端单页应用至 `web/dist`。
+> 2. 检查 Cloudflare 账户中的 D1 数据库，若不存在则自动创建 `personal-ai-gateway`，并将真实数据库 ID 自动写入 `worker/wrangler.toml`。
+> 3. 自动将 `GATEWAY_BASE_URL` 和 `APP_NAME` 写入 `wrangler.toml` 的 `[vars]` 配置。
+> 4. 自动对远程 D1 数据库执行全套 SQL Migration（初始化表结构、多 Provider 扩展、高级路由与分析表）。
+> 5. 自动通过 `wrangler secret put` 上传所有已配置的密钥。
+> 6. 部署 Worker 及静态资源资产，部署完成后输出可访问的公网 URL。
 
-- `D1_DATABASE_ID`：自动写入 `worker/wrangler.toml`，不用在 git 里写死数据库 id。
-- `GATEWAY_BASE_URL` / `APP_NAME`：自动写入 `wrangler.toml` 的 `[vars]`。
-- `ADMIN_SECRET` / `SESSION_SECRET` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`：自动执行 `wrangler secret put`。
-
-只想直接部署 Worker、不跑构建/配置/迁移时：
-
-```bash
-pnpm deploy:worker
-```
-
-单独执行远程迁移：
-
-```bash
-pnpm db:migrate:remote
-```
-
-## 常用脚本
+### 单独执行各环节命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `pnpm install` | 安装依赖 |
-| `pnpm dev:web` | Vite 开发服务器（代理到 worker） |
-| `pnpm dev:worker` | Wrangler 本地运行 Worker |
-| `pnpm build:web` | 构建 Dashboard 到 `web/dist` |
-| `pnpm typecheck` | 全部 TypeScript 类型检查 |
-| `pnpm test` | Worker vitest 单元测试 |
-| `pnpm deploy` | 一键部署：build web、注入 D1 id/vars、远程迁移、上传 Secrets、部署 Worker |
-| pnpm db:migrate:local | 本地 D1 迁移 |
-| pnpm db:migrate:remote | 远程 D1 迁移 |
-| pnpm deploy:worker | 仅部署 Worker（跳过构建/配置/迁移） |
+| `pnpm deploy` | **一键全自动部署**（前端构建 + D1 自动建库/迁移 + Secret 上传 + Worker 部署） |
+| `pnpm deploy:worker` | 仅重新部署 Worker 代码（跳过前端构建和建库） |
+| `pnpm build:web` | 仅编译打包前端 Web 仪表盘 |
+| `pnpm db:migrate:remote` | 手动应用远程 Cloudflare D1 数据库迁移 |
+| `pnpm db:migrate:local` | 本地开发环境 D1 数据库迁移 |
+| `pnpm test` | 执行 Vitest 自动化单元测试 |
+| `pnpm typecheck` | 执行全局 TypeScript 严格类型检查 |
 
-## 管理 API
+---
 
-除 `/api/health` 与 `/api/auth/login` 外，`/api/*` 均要求管理端会话 Cookie。
+## 💻 客户端接入示例
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/api/auth/login` | 提交 `{ "password": "..." }`，成功后下发 HttpOnly/Secure 会话 Cookie |
-| `POST` | `/api/auth/logout` | 清除会话 Cookie |
-| `GET` | `/api/auth/me` | 校验当前会话 |
-| `GET/POST` | `/api/providers` | Provider 列表/创建 |
-| `PUT/DELETE` | `/api/providers/:id` | 更新/删除 Provider |
-| `GET/POST` | `/api/models` | Model 列表/创建 |
-| `PUT/DELETE` | `/api/models/:id` | 更新/删除 Model |
-| `GET/POST` | `/api/devices` | 设备列表/创建设备（创建时仅返回一次 `ccs_` 原始 Token） |
-| `PUT` | `/api/devices/:id` | 启用/禁用/改名设备 |
-| `POST` | `/api/devices/:id/revoke` | 撤销设备 Token |
-| `GET` | `/api/usage` | 用量明细，支持 `from/to/provider_id/model/device_id/limit/offset` |
-| `GET` | `/api/usage/stats?range=today|7d|30d` | 统计汇总、按 Provider/Model 分布与趋势 |
-| `GET` | `/api/settings` | Dashboard 设置信息 |
+网关采用**透明智能路由机制**，客户端统一使用网关地址和设备 Token，通过请求体中的 `model` 自动分发至对应的上游服务商。
 
-## Gateway 路由与调用方式
+### 1. OpenAI SDK (Python)
 
-网关采用透明路由机制，客户端统一使用网关地址和设备 Token，通过 `model` 参数自动定位上游：
+```python
+from openai import OpenAI
 
-1. **自动路由匹配**：请求传入的 `model`（可以是真实上游模型名，也可以是后台设置的 `alias` 别名），网关会自动匹配对应的 Provider、Endpoint 与 Secret 密钥。
-2. **双路径兼容**：同时兼容带 `/v1`（`/v1/chat/completions`）与不带 `/v1`（`/chat/completions`）的请求端点。
+client = OpenAI(
+    base_url="https://cpg.your-subdomain.workers.dev/v1",
+    api_key="ccs_your_device_token"  # 在「设备 Token」页面创建的密钥
+)
 
-| 路径 | 协议 |
-| --- | --- |
-| `POST /v1/chat/completions` 或 `/chat/completions` | OpenAI-compatible Chat Completions |
-| `POST /v1/messages` 或 `/messages` | Anthropic Messages API |
-| `GET /v1/models` 或 `/models` | 返回已配置且启用的模型列表 |
+response = client.chat.completions.create(
+    model="gpt-4o",  # 或后台配置的别名如 "gpt4"
+    messages=[{"role": "user", "content": "你好，请介绍一下你自己！"}]
+)
 
-### 示例代码
-
-#### OpenAI SDK（Python / TypeScript）
-```ts
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL: "https://cpg.你的用户名.workers.dev/v1",
-  apiKey: "ccs_你的设备Token", // 在「设备 Token」页面签发的 Token
-});
-
-const res = await client.chat.completions.create({
-  model: "deepseek-v4-flash", // 填入后台配置的 model_name 或 alias
-  messages: [{ role: "user", content: "你好！" }],
-});
-console.log(res.choices[0].message.content);
+print(response.choices[0].message.content)
 ```
 
-#### Anthropic SDK
-```ts
+### 2. Anthropic SDK (TypeScript)
+
+```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: "https://cpg.你的用户名.workers.dev",
-  apiKey: "ccs_你的设备Token",
+  baseURL: "https://cpg.your-subdomain.workers.dev",
+  apiKey: "ccs_your_device_token",
 });
 
-const res = await client.messages.create({
+const message = await client.messages.create({
   model: "claude-3-5-sonnet-20241022",
   max_tokens: 1024,
-  messages: [{ role: "user", content: "你好！" }],
+  messages: [{ role: "user", content: "Hello from Anthropic SDK!" }],
 });
-console.log(res.content[0]);
+
+console.log(message.content);
 ```
+
+### 3. Google Gemini (通过标准 OpenAI 协议)
+
+```typescript
+import OpenAI from "openai";
+
+// Gemini 上游在网关中支持以标准 OpenAI 协议透明转发
+const client = new OpenAI({
+  baseURL: "https://cpg.your-subdomain.workers.dev/v1",
+  apiKey: "ccs_your_device_token",
+});
+
+const response = await client.chat.completions.create({
+  model: "gemini-1.5-pro",
+  messages: [{ role: "user", content: "Hello Gemini!" }],
+});
+
+console.log(response.choices[0].message.content);
+```
+
+### 4. cURL 命令行
+
+```bash
+curl https://cpg.your-subdomain.workers.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ccs_your_device_token" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
+```
+
+### 5. 第三方客户端配置 (Cursor / Continue / NextChat / Cherry Studio)
+
+- **API Base URL**：`https://你的网关域名/v1`
+- **API Key**：`ccs_你的设备Token`
+- **Model**：填入后台配置的模型名或别名
 
 ---
 
-## 高级 JSON 配置说明 (`config_json`)
+## 📡 API 路由总览
 
-在管理端的 **Providers** 和 **Models** 页面中，均包含一个可选的 `config_json` 字段：
+### 1. AI Gateway 代理接口 (`/v1/*` 或 `/*`)
 
-> **常规使用**：直接**留空**即可，网关默认使用标准透明透传。
-> **特殊场景**：当对接非标准上游（如 Azure OpenAI、私有 vLLM 部署、特定模型参数覆盖）时按需填写。
+| 方法 | 路径 | 说明 | 鉴权方式 |
+| --- | --- | --- | --- |
+| `POST` | `/v1/chat/completions` 或 `/chat/completions` | OpenAI / Gemini 格式对话补全（支持流式 SSE） | Device Bearer Token |
+| `POST` | `/v1/messages` 或 `/messages` | Anthropic Messages 协议对话 | Device Bearer / `x-api-key` |
+| `GET` | `/v1/models` 或 `/models` | 查询当前已启用的模型列表（OpenAI 标准格式） | Device Bearer Token |
 
-### 1. Provider 级别的 `config_json`
-用于配置与该服务商通信时的全局请求头与网络选项：
+### 2. 管理后台接口 (`/api/*`)
 
-```json
-{
-  "headers": {
-    "OpenAI-Organization": "org-xxxxxx",
-    "api-key": "your-azure-api-key"
-  },
-  "timeout_ms": 60000
-}
-```
-
-### 2. Model 级别的 `config_json`
-用于对该模型设置强制覆盖或注入的请求参数：
-
-```json
-{
-  "max_tokens": 4096,
-  "temperature": 0.7,
-  "reasoning_effort": "medium"
-}
-```
+| 模块 | 方法与路径 | 说明 |
+| --- | --- | --- |
+| **Auth** | `POST /api/auth/login` | 管理员密码登录，写入 HttpOnly 会话 Cookie |
+| | `POST /api/auth/logout` | 退出登录并清除 Cookie |
+| | `GET /api/auth/me` | 检查当前登录状态 |
+| **Providers** | `GET /api/providers` | 获取所有已配置的服务商 |
+| | `POST /api/providers` | 创建服务商（支持 OpenAI、Anthropic、Gemini） |
+| | `PUT /api/providers/:id` | 修改服务商配置 |
+| | `DELETE /api/providers/:id` | 删除服务商 |
+| | `POST /api/providers/:id/fetch-models` | 向上游实时探测可用模型列表 |
+| **Models** | `GET /api/models` | 获取模型列表及关联信息 |
+| | `POST /api/models` | 新增模型（支持定价、别名、降级与加权策略） |
+| | `POST /api/models/batch` | 批量创建模型 |
+| | `POST /api/models/batch-update` | 批量启用/停用模型 |
+| | `POST /api/models/batch-delete` | 批量删除模型 |
+| | `PUT /api/models/:id` | 更新模型配置 |
+| | `DELETE /api/models/:id` | 删除模型 |
+| **Devices** | `GET /api/devices` | 获取设备列表与 RPM 限流配置 |
+| | `POST /api/devices` | 创建新设备 Token（原始 Token 仅返回一次） |
+| | `PUT /api/devices/:id` | 更新设备名/启用状态/限流 RPM |
+| | `POST /api/devices/:id/revoke` | 撤销设备 Token |
+| **Usage** | `GET /api/usage` | 查询调用明细日志（支持分页与多条件筛选） |
+| | `GET /api/usage/stats` | 仪表盘用量汇总、趋势与分布 |
+| | `GET /api/usage/analytics` | 多维统计分析（P50/P90/P99 延迟分位数、设备排行、错误码分布） |
+| | `GET /api/usage/export` | 导出用量数据为 CSV 或 JSON 格式文件 |
+| | `POST /api/usage/cleanup` | 清理指定天数前的原始日志记录 |
+| | `POST /api/usage/aggregate` | 手动触发每日用量数据聚合归档 |
+| **Config** | `GET /api/config/export` | 导出全网关配置 JSON 快照 |
+| | `POST /api/config/import` | 导入恢复全网关配置（支持 Merge / Overwrite） |
+| | `GET /api/config/cc-switch` | 导出 CC Switch 标准格式配置 |
+| | `POST /api/config/import-cc-switch` | 导入 CC Switch 格式配置 |
+| **Settings**| `GET /api/settings` | 获取系统设置与各语言客户端接入代码 |
 
 ---
 
-## D1 Schema
+## 🔒 安全与设计边界
 
-`migrations/0001_init.sql` 创建：
+- **零明文密钥存储**：
+  - 设备 Token 仅在生成时向管理员展示一次，D1 数据库中仅保存不可逆的 **SHA-256** 哈希值。
+  - 上游服务商 API Key 统一保存在 Cloudflare Encrypted Secrets 中，管理 API 与前端页面绝不回显任何明文密钥。
+- **高韧性流式透传**：
+  - 网关直接基于 Web 标准 `TransformStream` 进行流式代理，不缓存在内存中，保持极低内存占用与低延迟。
+  - 用量统计日志写入采用异步 `waitUntil` 执行，数据库写入异常绝不会影响上游模型响应返回给客户端。
+- **访问控制**：
+  - 管理端基于 HMAC-SHA256 签名 Cookie 认证；原生支持 Cloudflare Access 零信任白名单。
 
-- `providers`：Provider 配置，`secret_name` 指向 Worker Secret。
-- `models`：模型映射，`alias`/`model_name` 用于 Gateway 路由。
-- `devices`：设备与 `token_hash`（只存 SHA-256，不存原始 Token）。
-- `usage`：每次请求的用量与状态。
-- `settings`：预留键值配置表。
+---
 
-时间统一使用 Unix 毫秒（UTC）。
+## 📄 开源许可证
 
-## 安全与边界
+本项目基于 [MIT License](LICENSE) 开源。欢迎提交 Issue 或 Pull Request！
 
-- 单管理员：登录只依赖 `ADMIN_SECRET`，会话为无状态 HMAC 签名 Cookie，有效期 30 天，无会话撤销表。
-- 设备 Token 仅在创建时返回一次，数据库只存 SHA-256 Hash；撤销后 Token 立即失效。
-- Providers API 永不返回上游密钥，只返回 `secret_configured`。
-- Gateway 请求体只被读取一次用于解析 `model`/`stream`，不持久化 prompt/response。
-- 流式响应使用 TransformStream 透传，仅保留尾部约 16KB 用于流结束后解析 usage。
-- V1 不包含多用户、fallback、限流、费用估算与 Gemini/Responses 协议，后续版本可扩展。
 
