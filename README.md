@@ -80,68 +80,73 @@
 
 ## 🚀 部署方式
 
-本项目推荐使用 **GitHub Actions** 进行全自动持续集成与部署（零本地依赖、推送代码自动更新）；同时也支持通过本地 CLI 快速部署。
+本项目支持 **Cloudflare 官方原生 Git 集成（自动拉取 GitHub 提交并部署）**，无需配置复杂的 GitHub Actions 流水线，每次向 `main` 分支 `git push` 代码，Cloudflare 会自动完成构建与发布；同时也支持本地 CLI 一键部署。
 
 ---
 
-### 方案一：通过 GitHub Actions 自动部署（推荐）
+### 方案一：Cloudflare 控制台连接 GitHub 自动部署（推荐）
 
-只需将代码 Fork 或推送到你自己的 GitHub 仓库，并在仓库中配置好必要的 Secrets，每次向 `main` 分支提交代码或手动点击 `Run workflow` 时，GitHub Actions 就会自动完成 **单元测试 ➔ TypeScript 类型检查 ➔ Web 构建 ➔ D1 数据库创建与迁移 ➔ 密钥注入 ➔ Worker 全自动发布**。
+只需在 Cloudflare 控制台将 Worker 绑定到你的 GitHub 仓库，即可实现**零 GitHub Action 配置、代码推送全自动构建部署**。
 
-#### 1. 配置 GitHub Secrets & Variables
+#### 1. 创建 D1 数据库
+1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/) ➔ 进入左侧 **Storage & Databases** ➔ **D1 SQL Database**。
+2. 点击 **Create Database**，数据库名称填入：`personal-ai-gateway`，点击确定创建。
 
-前往你的 GitHub 仓库页面 ➔ **Settings** ➔ **Secrets and variables** ➔ **Actions**：
+#### 2. 在 Cloudflare 中连接 GitHub 仓库
+1. 进入左侧 **Compute (Workers & Pages)** ➔ 点击 **Create** ➔ 选择 **Import from Git**。
+2. 授权并选择你的 GitHub 仓库（如 `cpg`）。
+3. 配置构建设置（Build Settings）：
+   - **Framework preset**: `None`
+   - **Build command**: `pnpm build`
+   - **Root directory**: `/` (根目录)
 
-#### 🔐 Repository Secrets（机密密钥）
+#### 3. 配置环境变量与机密（Variables & Secrets）
+进入该 Worker 页面 ➔ **Settings** ➔ **Variables and Secrets** ➔ 添加以下配置：
 
-| Secret 名称 | 必须 | 说明与获取方式 |
-| --- | :---: | --- |
-| `CLOUDFLARE_API_TOKEN` | **是** | Cloudflare API 令牌。前往 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) ➔ 点击 **Create Token** ➔ 使用 **Edit Cloudflare Workers** 模板，并在权限中添加 **Account - D1 - Edit** 权限。 |
-| `CLOUDFLARE_ACCOUNT_ID` | **是** | Cloudflare 账户 ID。在 Cloudflare 控制台任意域名或 Workers 页面右侧栏即可查看 **Account ID**。 |
-| `ADMIN_SECRET` | **是** | 管理控制台的管理员登录密码（自定义，例如 `MyStrongPassword123!`）。 |
-| `SESSION_SECRET` | **是** | 管理端 Session 会话签名密钥（至少 32 位的随机安全字符串）。 |
-| `OPENAI_API_KEY` | 否 | OpenAI API Key（可选，也可在部署完成后在后台或 Cloudflare Secret 中配置）。 |
-| `ANTHROPIC_API_KEY` | 否 | Anthropic API Key（可选）。 |
-| `GEMINI_API_KEY` | 否 | Google Gemini API Key（可选）。 |
-| `D1_DATABASE_ID` | 否 | D1 数据库 ID。**留空即可**，部署脚本会自动在你的 Cloudflare 账户下创建 `personal-ai-gateway` 数据库并自动绑定！ |
-
-#### 🌐 Repository Variables（常规环境变量，非机密）
-
-| Variable 名称 | 必须 | 说明 | 示例值 |
+##### 🔐 Secrets（机密密钥，点击 Add Secret）
+| Secret 变量名 | 必须 | 说明 | 示例值 |
 | --- | :---: | --- | --- |
-| `GATEWAY_BASE_URL` | 否 | 展示在管理控制台中的网关地址 | `https://cpg.your-domain.com` 或 `https://cpg.user.workers.dev` |
+| `ADMIN_SECRET` | **是** | 管理控制台管理员登录密码 | `MySecretPass123!` |
+| `SESSION_SECRET` | **是** | 管理端 Session 会话签名密钥（建议 >= 32 位随机字符） | `random-32-chars-long-secret-key...` |
+| `OPENAI_API_KEY` | 否 | OpenAI API Key（也可在后台 UI 中直接添加） | `sk-...` |
+| `ANTHROPIC_API_KEY` | 否 | Anthropic API Key（可选） | `sk-ant-...` |
+| `GEMINI_API_KEY` | 否 | Google Gemini API Key（可选） | `AIzaSy...` |
+
+##### 🌐 Environment Variables（环境变量，点击 Add Variable）
+| 变量名 | 必须 | 说明 | 示例值 |
+| --- | :---: | --- | --- |
+| `GATEWAY_BASE_URL` | 否 | 展示在管理控制台中的网关地址 | `https://cpg.your-domain.com` |
 | `APP_NAME` | 否 | 管理后台自定义应用名称 | `Personal AI Gateway` |
-| `CF_ACCESS_ALLOWED_EMAILS` | 否 | Cloudflare Access 零信任白名单邮箱（多个逗号分隔） | `admin@example.com` |
+| `CF_ACCESS_ALLOWED_EMAILS` | 否 | Cloudflare Access 零信任白名单邮箱（逗号分隔） | `admin@example.com` |
 
-#### 2. 触发部署
+#### 4. 绑定 D1 数据库（Bindings）
+进入 Worker 页面 ➔ **Settings** ➔ **Bindings** ➔ 点击 **Add** ➔ 选择 **D1 database**：
+- **Variable name**: 必须填写 `DB`（大写）
+- **D1 database**: 选择第 1 步创建的 `personal-ai-gateway` 数据库。
 
-- **自动触发**：向 `main` 分支推送（Push）任何代码，GitHub Actions 将自动执行部署。
-- **手动触发**：前往 GitHub 仓库的 **Actions** 标签页 ➔ 选择 **Deploy to Cloudflare** ➔ 点击 **Run workflow**。
+#### 5. 自动持续部署
+配置完成后点击 **Save and Deploy**。之后你向 GitHub `main` 分支推送的每一次提交，Cloudflare 都会自动拉取最新代码并完成热更新发布！
 
 ---
 
 ### 方案二：本地 CLI 一键部署（开发者备用）
 
-如果你希望直接在本地通过终端部署：
+如果你希望直接在本地终端通过命令行发布：
 
 #### 1. 前置准备与登录
-
-- 安装 [Node.js](https://nodejs.org/) (>= 18.0.0) 和 [pnpm](https://pnpm.io/) (>= 9.0.0)。
+- 安装 [Node.js](https://nodejs.org/) (>= 20.0.0) 和 [pnpm](https://pnpm.io/) (>= 9.0.0)。
 - 终端登录 Cloudflare 账户：
   ```bash
   npx wrangler login
   ```
 
 #### 2. 配置本地环境变量
-
 ```bash
 cp deploy.env.example deploy.env
 ```
-
-编辑 `deploy.env` 文件填写 `ADMIN_SECRET` 与 `SESSION_SECRET`（上游 Key 按需填写，`D1_DATABASE_ID` 留空即可）。
+编辑 `deploy.env` 文件填写 `ADMIN_SECRET` 与 `SESSION_SECRET`（上游 Key 按需填写，`D1_DATABASE_ID` 留空即可，脚本会自动创建）。
 
 #### 3. 执行一键部署命令
-
 ```bash
 pnpm install
 pnpm deploy
@@ -149,18 +154,17 @@ pnpm deploy
 
 ---
 
-### 🛠️ 常用开发与部署脚本
+### 🛠️ 常用开发与构建脚本
 
 | 命令 | 说明 |
 | --- | --- |
-| `pnpm deploy` | **一键全自动部署**（前端构建 + D1 自动建库/迁移 + Secret 上传 + Worker 部署） |
+| `pnpm build` | 编译前端 UI 仪表盘资产到 `web/dist`（供 Cloudflare 部署构建使用） |
+| `pnpm deploy` | **本地一键全自动部署**（前端构建 + D1 自动建库/迁移 + Secret 上传 + Worker 部署） |
 | `pnpm dev:worker` | 本地运行 Cloudflare Worker（监听 8787 端口） |
 | `pnpm dev:web` | 启动前端 Vite 开发服务器（自动代理 `/api` 和 `/v1`） |
-| `pnpm build:web` | 编译打包前端 Web 仪表盘至 `web/dist` |
 | `pnpm test` | 执行 Vitest 自动化单元测试套件 |
 | `pnpm typecheck` | 执行 TypeScript 全局类型检查 |
 | `pnpm db:migrate:remote` | 手动执行远程 Cloudflare D1 数据库迁移 |
-| `pnpm deploy:worker` | 仅重新部署 Worker 代码（跳过前端构建和建库） |
 
 ---
 
