@@ -12,9 +12,8 @@ const deployEnvFile = path.join(root, "deploy.env");
 
 const D1_NAME = "personal-ai-gateway";
 const PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000";
-const SECRET_KEYS = ["ADMIN_SECRET", "SESSION_SECRET", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"];
-const VAR_KEYS = ["GATEWAY_BASE_URL", "APP_NAME"];
-const ENV_KEYS = [...SECRET_KEYS, "D1_DATABASE_ID", ...VAR_KEYS];
+const DEFAULT_SECRET_KEYS = ["ADMIN_SECRET", "SESSION_SECRET", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"];
+const VAR_KEYS = ["GATEWAY_BASE_URL", "APP_NAME", "CF_ACCESS_ALLOWED_EMAILS"];
 
 function loadEnv() {
   const env = {};
@@ -31,17 +30,25 @@ function loadEnv() {
       }
       env[key] = value;
     }
-    console.log(`Loaded deploy env: ${deployEnvFile}`);
+    console.log(`Loaded deploy env file: ${deployEnvFile}`);
   }
-  for (const key of ENV_KEYS) {
-    if (process.env[key]) env[key] = process.env[key];
+
+  // Merge process.env (GitHub Actions secrets/variables take precedence)
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value && (key.endsWith("_KEY") || key.endsWith("_SECRET") || VAR_KEYS.includes(key) || key === "D1_DATABASE_ID")) {
+      env[key] = value;
+    }
   }
   return env;
 }
 
 function runWrangler(args, { input, cwd = workerDir } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [wranglerCli, ...args], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [wranglerCli, ...args], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env },
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
@@ -156,10 +163,17 @@ async function applyMigrations() {
 }
 
 async function setSecrets(env) {
-  for (const key of SECRET_KEYS) {
+  const secretKeys = new Set([...DEFAULT_SECRET_KEYS]);
+  for (const k of Object.keys(env)) {
+    if ((k.endsWith("_KEY") || k.endsWith("_SECRET")) && !VAR_KEYS.includes(k) && k !== "D1_DATABASE_ID") {
+      secretKeys.add(k);
+    }
+  }
+
+  for (const key of secretKeys) {
     const value = env[key];
     if (!value) {
-      console.log(`Skip secret ${key}: not present in deploy.env`);
+      console.log(`Skip secret ${key}: not configured`);
       continue;
     }
     logStep(`Uploading secret ${key}`);

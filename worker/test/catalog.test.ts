@@ -154,7 +154,7 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
       json: (data: any, status?: number) => ({ data, status: status || 200 }),
     };
 
-    const res = await listModelsHandler(mockContext);
+    const res: any = await listModelsHandler(mockContext);
     expect(res.data.object).toBe("list");
     expect(res.data.data.length).toBe(2);
     expect(res.data.data.map((x: any) => x.id)).toEqual(["gpt-4o", "gpt-4o-latest"]);
@@ -195,9 +195,10 @@ describe("Model Catalog Builder (model-catalog.json)", () => {
       json: (data: any, status?: number) => ({ data, status: status || 200 }),
     };
 
-    const res = await getModelHandler(mockContext);
+    const res: any = await getModelHandler(mockContext);
     expect(res.data.id).toBe("gpt-4o");
     expect(res.data.object).toBe("model");
     expect(res.data.owned_by).toBe("OpenAI");
   });
 });
+

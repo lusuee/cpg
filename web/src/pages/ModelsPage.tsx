@@ -66,7 +66,7 @@ export default function ModelsPage() {
 
   // Export modal state
   const [showExport, setShowExport] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"catalog" | "toml" | "continue" | "list">("catalog");
+  const [exportFormat, setExportFormat] = useState<"catalog" | "toml" | "pi" | "continue" | "list">("catalog");
   const [downloadingCatalog, setDownloadingCatalog] = useState(false);
 
   // Sync / Auto-fetch modal state
@@ -432,6 +432,36 @@ api_key = "YOUR_DEVICE_TOKEN"
 wire_specification = "openai"
 `;
 
+  const piExportJson = JSON.stringify(
+    {
+      providers: {
+        "personal-ai-gateway": {
+          name: "Personal AI Gateway",
+          baseUrl: `${baseUrl}/v1`,
+          api: "openai-completions",
+          apiKey: "YOUR_DEVICE_TOKEN",
+          discoverModels: true,
+          models: activeModels.map((m) => {
+            let contextWindow = 128000;
+            if (m.config_json) {
+              try {
+                const parsed = JSON.parse(m.config_json);
+                if (parsed.context_window) contextWindow = parsed.context_window;
+              } catch {}
+            }
+            return {
+              id: m.alias || m.model_name,
+              name: m.display_name || m.alias || m.model_name,
+              contextWindow,
+            };
+          }),
+        },
+      },
+    },
+    null,
+    2
+  );
+
   const continueExportJson = JSON.stringify(
     {
       models: activeModels.map((m) => ({
@@ -457,6 +487,16 @@ wire_specification = "openai"
     } finally {
       setDownloadingCatalog(false);
     }
+  };
+
+  const handleDownloadPiConfig = () => {
+    const blob = new Blob([piExportJson], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "models.json";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (loading && !items.length) return <Spinner text="正在加载模型列表…" />;
@@ -1095,6 +1135,16 @@ wire_specification = "openai"
               Codex config.toml
             </button>
             <button
+              onClick={() => setExportFormat("pi")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 ${
+                exportFormat === "pi"
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              <span>🥧 Pi (models.json)</span>
+            </button>
+            <button
               onClick={() => setExportFormat("continue")}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
                 exportFormat === "continue"
@@ -1129,12 +1179,24 @@ wire_specification = "openai"
                   <span>{downloadingCatalog ? "下载中…" : "下载 JSON 文件"}</span>
                 </button>
               )}
+              {exportFormat === "pi" && (
+                <button
+                  type="button"
+                  onClick={handleDownloadPiConfig}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm transition-all cursor-pointer"
+                >
+                  <IconDownload className="w-3.5 h-3.5" />
+                  <span>下载 models.json</span>
+                </button>
+              )}
               <CopyButton
                 text={
                   exportFormat === "catalog"
                     ? modelCatalogJson
                     : exportFormat === "toml"
                     ? codexTomlConfig
+                    : exportFormat === "pi"
+                    ? piExportJson
                     : exportFormat === "continue"
                     ? continueExportJson
                     : modelListText
@@ -1148,6 +1210,8 @@ wire_specification = "openai"
                 ? modelCatalogJson
                 : exportFormat === "toml"
                 ? codexTomlConfig
+                : exportFormat === "pi"
+                ? piExportJson
                 : exportFormat === "continue"
                 ? continueExportJson
                 : modelListText}
@@ -1168,6 +1232,15 @@ wire_specification = "openai"
               <div className="font-semibold">💡 Codex config.toml 说明：</div>
               <p>1. 将配置追加到 <code>~/.codex/config.toml</code> 中，并将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」创建的有效 Token。</p>
               <p>2. 将 <code>model_catalog_json</code> 指向下载的 <code>model-catalog.json</code> 绝对路径。</p>
+            </div>
+          ) : exportFormat === "pi" ? (
+            <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 space-y-1.5">
+              <div className="font-semibold flex items-center gap-1.5">
+                <span>💡 Pi (Pi Coding Agent) 接入指南 (~/.pi/agent/models.json)：</span>
+              </div>
+              <p>1. 点击上方「下载 models.json」保存至 <code>~/.pi/agent/models.json</code>，或将配置内容复制并合并入已有配置文件中。</p>
+              <p>2. 将 <code>YOUR_DEVICE_TOKEN</code> 替换为您在「设备 Token」创建的有效密钥（如 <code>ccs_xxx</code>）。</p>
+              <p>3. 在 Pi 交互终端中输入 <code>/reload</code> 重新加载配置，即可在 <code>/model</code> 选择器中直接使用网关所有模型。</p>
             </div>
           ) : (
             <div className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 space-y-1">
