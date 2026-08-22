@@ -130,3 +130,36 @@ export const UpdateDeviceSchema = z.object({
 export const AggregateStatsSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date 必须为 YYYY-MM-DD 格式").optional(),
 });
+
+// CC-Switch Schemas
+export const CcSwitchPreviewSchema = z.object({
+  raw: z.string().min(1, "配置内容不能为空"),
+});
+
+export const CcSwitchImportItemSchema = z.object({
+  name: z.string().min(1, "Provider 名称不能为空").max(100),
+  type: z.enum(["anthropic", "openai", "gemini"]),
+  endpoint: z.string().nullable().optional(),
+  api_key: z.string().nullable().optional(),
+  enabled: z.boolean().optional().default(true),
+  models: z
+    .array(
+      z.object({
+        model_name: z.string().min(1),
+        display_name: z.string().optional(),
+        alias: z.string().optional(),
+        input_price_per_m: z.number().optional(),
+        output_price_per_m: z.number().optional(),
+      })
+    )
+    .optional()
+    .default([]),
+  config_json: z.string().nullable().optional(),
+});
+
+export const CcSwitchImportSchema = z.object({
+  raw: z.string().optional(),
+  items: z.array(CcSwitchImportItemSchema).optional(),
+  overwrite: z.boolean().optional().default(false),
+  import_models: z.boolean().optional().default(true),
+});

@@ -2,7 +2,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Provider } from "../types";
 import { Badge, Button, Card, Empty, Input, Modal, Select, Spinner, Textarea } from "../components/ui";
-import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch } from "../components/icons";
+import { IconPlus, IconEdit, IconTrash, IconProviders, IconCheck, IconSearch, IconUpload } from "../components/icons";
 import { useQuery, invalidateCache } from "../hooks/useQuery";
 
 interface FormState {
@@ -14,6 +14,25 @@ interface FormState {
   secret_name: string;
   enabled: boolean;
   config_json: string;
+}
+
+interface ParsedImportModel {
+  model_name: string;
+  display_name?: string;
+  alias?: string;
+  input_price_per_m?: number;
+  output_price_per_m?: number;
+}
+
+interface ParsedImportProvider {
+  name: string;
+  type: "anthropic" | "openai" | "gemini";
+  endpoint: string | null;
+  api_key: string | null;
+  api_key_masked?: string | null;
+  enabled: boolean;
+  models: ParsedImportModel[];
+  config_json?: string;
 }
 
 const emptyForm: FormState = {
@@ -48,12 +67,112 @@ export default function ProvidersPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchOperating, setBatchOperating] = useState(false);
 
+  // CC-Switch Import Modal State
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRaw, setImportRaw] = useState("");
+  const [importPreview, setImportPreview] = useState<ParsedImportProvider[] | null>(null);
+  const [importSelectedIndices, setImportSelectedIndices] = useState<Set<number>>(new Set());
+  const [importOverwrite, setImportOverwrite] = useState(false);
+  const [importModels, setImportModels] = useState(true);
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+
+  function openImport() {
+    setImportRaw("");
+    setImportPreview(null);
+    setImportSelectedIndices(new Set());
+    setImportOverwrite(false);
+    setImportModels(true);
+    setImportError("");
+    setImportSuccess(null);
+    setShowImportModal(true);
+  }
+
   function openCreate() {
     setForm(emptyForm);
     setShowKeyText(false);
     setShowAdvancedSecret(false);
     setError("");
     setShow(true);
+  }
+
+  async function handleParsePreview() {
+    if (!importRaw.trim()) return;
+    setParsing(true);
+    setImportError("");
+    try {
+      const res = await api.post<{ items: ParsedImportProvider[]; count: number }>("/api/providers/ccswitch/preview", {
+        raw: importRaw.trim(),
+      });
+      if (!res.items || !res.items.length) {
+        setImportError("未能解析到有效的 CC-Switch 配置，请确认内容包含 SQL 语句、JSON 配置或 ccswitch:// 链接");
+        return;
+      }
+      setImportPreview(res.items);
+      setImportSelectedIndices(new Set(res.items.map((_, i) => i)));
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : "解析配置失败");
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  const toggleSelectAllImport = () => {
+    if (!importPreview) return;
+    if (importSelectedIndices.size === importPreview.length) {
+      setImportSelectedIndices(new Set());
+    } else {
+      setImportSelectedIndices(new Set(importPreview.map((_, i) => i)));
+    }
+  };
+
+  const toggleSelectImportIndex = (idx: number) => {
+    setImportSelectedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  async function handleExecuteImport() {
+    if (!importPreview || !importSelectedIndices.size) return;
+    setImporting(true);
+    setImportError("");
+    setImportSuccess(null);
+
+    const selectedItems = Array.from(importSelectedIndices)
+      .sort((a, b) => a - b)
+      .map((i) => importPreview[i]);
+
+    try {
+      const res = await api.post<{
+        success: boolean;
+        imported_providers: number;
+        updated_providers: number;
+        imported_models: number;
+      }>("/api/providers/ccswitch/import", {
+        items: selectedItems,
+        overwrite: importOverwrite,
+        import_models: importModels,
+      });
+
+      const provCount = (res.imported_providers || 0) + (res.updated_providers || 0);
+      setImportSuccess(
+        `🎉 成功导入 ${provCount} 个 Provider（新增 ${res.imported_providers} 个，更新 ${res.updated_providers} 个），自动创建 ${res.imported_models} 个关联模型！`
+      );
+
+      invalidateCache("providers-list");
+      invalidateCache("models-");
+      invalidateCache("dashboard-");
+      await refresh();
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : "导入配置失败");
+    } finally {
+      setImporting(false);
+    }
   }
 
   function openEdit(p: Provider) {
@@ -205,10 +324,16 @@ export default function ProvidersPage() {
             配置上游 AI 服务商（OpenAI 兼容协议 / Anthropic / Google Gemini 协议）及其 API 密钥与地址
           </p>
         </div>
-        <Button onClick={openCreate} className="shadow-sm w-full sm:w-auto">
-          <IconPlus />
-          <span>新增 Provider</span>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button variant="secondary" onClick={openImport} className="shadow-sm w-full sm:w-auto">
+            <IconUpload />
+            <span>导入 CC Switch 配置</span>
+          </Button>
+          <Button onClick={openCreate} className="shadow-sm w-full sm:w-auto">
+            <IconPlus />
+            <span>新增 Provider</span>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -516,6 +641,255 @@ export default function ProvidersPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* CC-Switch Import Modal */}
+      <Modal
+        open={showImportModal}
+        onClose={() => {
+          if (!importing) setShowImportModal(false);
+        }}
+        title="导入 CC Switch 配置"
+      >
+        <div className="space-y-4">
+          {!importPreview ? (
+            <>
+              <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-xl space-y-1.5">
+                <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span>💡 支持的 CC Switch 配置格式：</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <li>CC-Switch 导出的 SQL 备份文件（如 <code className="text-blue-600 dark:text-blue-400">cc-switch-export-*.sql</code>）</li>
+                  <li>CC-Switch JSON 配置数组或快照（<code className="text-blue-600 dark:text-blue-400">[&#123; name, settings_config, ... &#125;]</code>）</li>
+                  <li>CC-Switch 快捷导入链接（<code className="text-blue-600 dark:text-blue-400">ccswitch://v1/import?...</code>）</li>
+                  <li>Claude Code / Codex 环境变量与 <code className="text-blue-600 dark:text-blue-400">settings.json</code> / <code className="text-blue-600 dark:text-blue-400">.env</code></li>
+                </ul>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    配置内容（粘贴或选择文件）
+                  </label>
+                  <label className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1 font-medium">
+                    <IconUpload className="w-3.5 h-3.5" />
+                    <span>选择本地文件 (.sql / .json)</span>
+                    <input
+                      type="file"
+                      accept=".sql,.json,.txt,.env"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const content = event.target?.result as string;
+                            if (content) {
+                              setImportRaw(content);
+                            }
+                          };
+                          reader.readAsText(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <Textarea
+                  rows={8}
+                  className="font-mono text-xs"
+                  placeholder="在此粘贴 CC-Switch 导出的 SQL 语句、JSON 配置或 ccswitch:// 链接..."
+                  value={importRaw}
+                  onChange={(e) => setImportRaw(e.target.value)}
+                />
+              </div>
+
+              {importError ? (
+                <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">
+                  {importError}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <Button type="button" variant="secondary" onClick={() => setShowImportModal(false)}>
+                  取消
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!importRaw.trim() || parsing}
+                  onClick={handleParsePreview}
+                >
+                  {parsing ? "正在解析…" : "解析配置"}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  解析到 {importPreview.length} 个 Provider 配置：
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllImport}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-medium"
+                >
+                  {importSelectedIndices.size === importPreview.length ? "取消全选" : "全选全部"}
+                </button>
+              </div>
+
+              <div className="max-h-[300px] overflow-y-auto space-y-2.5 pr-1">
+                {importPreview.map((item, idx) => {
+                  const isChecked = importSelectedIndices.has(idx);
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => toggleSelectImportIndex(idx)}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                        isChecked
+                          ? "bg-blue-50/40 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                          : "bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}}
+                          className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">
+                              {item.name}
+                            </span>
+                            <Badge
+                              tone={
+                                item.type === "anthropic"
+                                  ? "purple"
+                                  : item.type === "gemini"
+                                  ? "amber"
+                                  : "blue"
+                              }
+                            >
+                              {item.type === "anthropic"
+                                ? "Anthropic"
+                                : item.type === "gemini"
+                                ? "Gemini"
+                                : "OpenAI"}
+                            </Badge>
+                          </div>
+                          <div className="mt-1 text-xs font-mono text-slate-500 dark:text-slate-400 truncate">
+                            {item.endpoint || "官方默认 Endpoint"}
+                          </div>
+                          {item.api_key_masked && (
+                            <div className="mt-0.5 text-xs font-mono text-slate-600 dark:text-slate-400">
+                              密钥: {item.api_key_masked}
+                            </div>
+                          )}
+                          {item.models && item.models.length > 0 && (
+                            <div className="mt-2 flex flex-wrap items-center gap-1">
+                              <span className="text-[11px] text-slate-400 dark:text-slate-500">模型 ({item.models.length}):</span>
+                              {item.models.slice(0, 4).map((m, mIdx) => (
+                                <span
+                                  key={mIdx}
+                                  className="inline-block px-1.5 py-0.5 bg-slate-200/60 dark:bg-slate-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 rounded"
+                                >
+                                  {m.display_name || m.model_name}
+                                </span>
+                              ))}
+                              {item.models.length > 4 && (
+                                <span className="text-[10px] text-slate-400">+{item.models.length - 4}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="import-models-opt"
+                    checked={importModels}
+                    onChange={(e) => setImportModels(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="import-models-opt"
+                    className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none"
+                  >
+                    同时自动创建提取到的模型
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="import-overwrite-opt"
+                    checked={importOverwrite}
+                    onChange={(e) => setImportOverwrite(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="import-overwrite-opt"
+                    className="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none"
+                  >
+                    若存在同名 Provider 则覆盖更新配置（未勾选时将作为新 Provider 导入）
+                  </label>
+                </div>
+              </div>
+
+              {importError ? (
+                <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 p-2.5 rounded-lg">
+                  {importError}
+                </div>
+              ) : null}
+
+              {importSuccess ? (
+                <div className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-2.5 rounded-lg">
+                  {importSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setImportPreview(null);
+                    setImportSuccess(null);
+                    setImportError("");
+                  }}
+                  disabled={importing}
+                >
+                  重新输入
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowImportModal(false)}
+                    disabled={importing}
+                  >
+                    关闭
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={importSelectedIndices.size === 0 || importing}
+                    onClick={handleExecuteImport}
+                  >
+                    {importing
+                      ? "正在导入…"
+                      : `导入选中的 ${importSelectedIndices.size} 项`}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );
