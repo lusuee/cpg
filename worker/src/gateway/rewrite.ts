@@ -43,7 +43,7 @@ export function parseRewriteRules(configJson?: string | null): RewriteRules {
 export function applyRequestRewriteRules(
   reqBody: Record<string, any>,
   rules: RewriteRules,
-  kind: "messages" | "chat/completions" | "responses" | "openai" | "anthropic"
+  kind: "messages" | "chat/completions" | "responses" | "openai" | "anthropic" | "gemini" | string
 ): Record<string, any> {
   const body = { ...reqBody };
   const isAnthropic = kind === "messages" || kind === "anthropic";

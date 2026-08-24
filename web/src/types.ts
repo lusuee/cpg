@@ -203,4 +203,64 @@ export interface WebhookConfigResponse {
   secret_configured: boolean;
 }
 
+export interface AuditLogItem {
+  id: number;
+  actor_type: string;
+  ip: string | null;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  summary: string;
+  details_json: string | null;
+  created_at: number;
+}
+
+export interface ConfigSnapshotItem {
+  id: string;
+  name: string;
+  description: string | null;
+  size_bytes?: number;
+  created_at: number;
+}
+
+export interface IpWhitelistConfig {
+  enabled: boolean;
+  allowed_ips: string[];
+  client_ip?: string;
+}
+
+export interface KeyRotationItem {
+  id: string;
+  name: string;
+  type: "provider" | "device";
+  key_hint: string;
+  created_at: number;
+  updated_at?: number;
+  age_days: number;
+  status: "fresh" | "expiring_soon" | "expired";
+  recommendation: string;
+}
+
+export interface KeyRotationReport {
+  recommended_rotation_days: number;
+  fresh_count: number;
+  expiring_soon_count: number;
+  expired_count: number;
+  items: KeyRotationItem[];
+}
+
+export interface PlaygroundMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp?: number;
+  latency_ms?: number;
+  tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+
 

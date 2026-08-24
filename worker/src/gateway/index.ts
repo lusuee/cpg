@@ -27,6 +27,12 @@ gatewayApp.get("/model-catalog.json", async (c) => {
   const catalog = buildModelCatalog(items);
   return c.json(catalog);
 });
+gatewayApp.get("/openapi.json", async (c) => {
+  const { generateOpenApiSpec } = await import("./openapi");
+  const reqOrigin = new URL(c.req.url).origin;
+  const spec = await generateOpenApiSpec(c.env, reqOrigin);
+  return c.json(spec);
+});
 
 gatewayApp.post("/messages", (c) => handleGatewayProxy(c, "messages"));
 gatewayApp.post("/chat/completions", (c) => handleGatewayProxy(c, "chat/completions"));

@@ -13,6 +13,11 @@ import type {
   CostAnalytics,
   CostAnomalyAlert,
   ModelSpendRankItem,
+  AuditLogRow,
+  ConfigSnapshotRow,
+  IpWhitelistConfig,
+  KeyRotationItem,
+  KeyRotationReport,
 } from "../types";
 import { newId, randomUUID } from "../utils/crypto";
 import { ensureSchema } from "./schema";
@@ -631,6 +636,7 @@ export async function aggregateDailyStats(env: Env, targetDate?: string, tzModif
 // ---------- Settings Storage ----------
 
 export async function getSetting<T = any>(env: Env, key: string): Promise<T | null> {
+  if (!env?.DB) return null;
   await ensureSchema(env);
   const row = await env.DB.prepare("SELECT value_json FROM settings WHERE key = ?").bind(key).first<{ value_json: string }>();
   if (!row?.value_json) return null;
@@ -642,6 +648,7 @@ export async function getSetting<T = any>(env: Env, key: string): Promise<T | nu
 }
 
 export async function setSetting(env: Env, key: string, val: any): Promise<void> {
+  if (!env?.DB) return;
   await ensureSchema(env);
   const json = typeof val === "string" ? val : JSON.stringify(val);
   await env.DB.prepare(
@@ -1056,4 +1063,305 @@ export async function statsCostAnalytics(
 export function randomRequestId(): string {
   return randomUUID();
 }
+
+// ---------- Audit Logs ----------
+
+export async function recordAuditLog(
+  env: Env,
+  params: {
+    actor_type?: string;
+    ip?: string | null;
+    action: string;
+    target_type: string;
+    target_id?: string | null;
+    summary: string;
+    details?: Record<string, unknown> | null;
+  }
+): Promise<void> {
+  await ensureSchema(env);
+  const t = now();
+  const actorType = params.actor_type || "admin";
+  const ip = params.ip || null;
+  const targetId = params.target_id || null;
+  const detailsJson = params.details ? JSON.stringify(params.details) : null;
+
+  try {
+    await env.DB.prepare(`
+      INSERT INTO audit_logs (actor_type, ip, action, target_type, target_id, summary, details_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(actorType, ip, params.action, params.target_type, targetId, params.summary, detailsJson, t).run();
+  } catch (err) {
+    console.error("Failed to record audit log:", err);
+  }
+}
+
+export async function listAuditLogs(
+  env: Env,
+  options: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    target_type?: string;
+  } = {}
+): Promise<{ items: AuditLogRow[]; total: number }> {
+  await ensureSchema(env);
+  const limit = Math.min(Math.max(1, options.limit || 50), 200);
+  const offset = Math.max(0, options.offset || 0);
+
+  let whereSql = "WHERE 1=1";
+  const binds: unknown[] = [];
+
+  if (options.action) {
+    whereSql += " AND action = ?";
+    binds.push(options.action);
+  }
+  if (options.target_type) {
+    whereSql += " AND target_type = ?";
+    binds.push(options.target_type);
+  }
+
+  const countRow = await env.DB.prepare(`SELECT COUNT(*) as total FROM audit_logs ${whereSql}`).bind(...binds).first<{ total: number }>();
+  const total = Number(countRow?.total || 0);
+
+  const res = await env.DB.prepare(`
+    SELECT * FROM audit_logs ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(...binds, limit, offset).all<AuditLogRow>();
+
+  return {
+    items: (res.results || []) as unknown as AuditLogRow[],
+    total,
+  };
+}
+
+// ---------- Config Snapshots ----------
+
+export async function createConfigSnapshot(
+  env: Env,
+  name: string,
+  description?: string
+): Promise<ConfigSnapshotRow> {
+  await ensureSchema(env);
+  const id = newId("snap");
+  const t = now();
+
+  const [providers, models, budgetCfg, webhookCfg, ipWhitelistCfg] = await Promise.all([
+    listProviders(env),
+    listModels(env),
+    getSetting(env, "budget_config"),
+    getSetting(env, "webhook_config"),
+    getSetting(env, "ip_whitelist_config"),
+  ]);
+
+  const payload = {
+    exported_at: t,
+    providers,
+    models,
+    settings: {
+      budget_config: budgetCfg,
+      webhook_config: webhookCfg,
+      ip_whitelist_config: ipWhitelistCfg,
+    },
+  };
+
+  const jsonStr = JSON.stringify(payload);
+  const desc = description || `包含 ${providers.length} 个 Providers, ${models.length} 个 Models`;
+
+  await env.DB.prepare(`
+    INSERT INTO config_snapshots (id, name, description, snapshot_json, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(id, name.trim(), desc, jsonStr, t).run();
+
+  return {
+    id,
+    name: name.trim(),
+    description: desc,
+    snapshot_json: jsonStr,
+    created_at: t,
+  };
+}
+
+export async function listConfigSnapshots(
+  env: Env
+): Promise<Array<Omit<ConfigSnapshotRow, "snapshot_json"> & { size_bytes: number }>> {
+  await ensureSchema(env);
+  const res = await env.DB.prepare(`
+    SELECT id, name, description, LENGTH(snapshot_json) as size_bytes, created_at
+    FROM config_snapshots
+    ORDER BY created_at DESC
+  `).all<any>();
+  return (res.results || []) as any;
+}
+
+export async function getConfigSnapshot(env: Env, id: string): Promise<ConfigSnapshotRow | null> {
+  await ensureSchema(env);
+  return (await env.DB.prepare("SELECT * FROM config_snapshots WHERE id = ?").bind(id).first<ConfigSnapshotRow>()) || null;
+}
+
+export async function deleteConfigSnapshot(env: Env, id: string): Promise<boolean> {
+  await ensureSchema(env);
+  const res = await env.DB.prepare("DELETE FROM config_snapshots WHERE id = ?").bind(id).run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+export async function restoreConfigSnapshot(env: Env, snapshotId: string): Promise<{ success: boolean; message: string }> {
+  await ensureSchema(env);
+  const snap = await getConfigSnapshot(env, snapshotId);
+  if (!snap) return { success: false, message: "未找到指定的配置快照" };
+
+  try {
+    const data = JSON.parse(snap.snapshot_json);
+    // Create automatic safety backup before restoring
+    await createConfigSnapshot(env, `回滚前自动备份 (${new Date().toISOString().slice(0, 19)})`, `在恢复快照「${snap.name}」前自动创建的安全快照`);
+
+    // Restore providers
+    if (Array.isArray(data.providers)) {
+      for (const p of data.providers) {
+        const existing = await getProvider(env, p.id);
+        if (existing) {
+          await updateProvider(env, p.id, {
+            name: p.name,
+            type: p.type,
+            endpoint: p.endpoint,
+            api_key: p.api_key,
+            secret_name: p.secret_name,
+            enabled: Boolean(p.enabled),
+            config_json: p.config_json,
+          });
+        } else {
+          await createProvider(env, {
+            name: p.name,
+            type: p.type,
+            endpoint: p.endpoint,
+            api_key: p.api_key,
+            secret_name: p.secret_name,
+            enabled: Boolean(p.enabled),
+            config_json: p.config_json,
+          });
+        }
+      }
+    }
+
+    // Restore models
+    if (Array.isArray(data.models)) {
+      for (const m of data.models) {
+        const existing = await getModel(env, m.id);
+        if (existing) {
+          await updateModel(env, m.id, {
+            model_name: m.model_name,
+            display_name: m.display_name,
+            alias: m.alias,
+            fallback_model_id: m.fallback_model_id,
+            input_price_per_m: m.input_price_per_m,
+            output_price_per_m: m.output_price_per_m,
+            cache_enabled: m.cache_enabled,
+            cache_ttl: m.cache_ttl,
+            enabled: Boolean(m.enabled),
+            config_json: m.config_json,
+          });
+        } else {
+          await createModel(env, {
+            provider_id: m.provider_id,
+            model_name: m.model_name,
+            display_name: m.display_name,
+            alias: m.alias,
+            fallback_model_id: m.fallback_model_id,
+            input_price_per_m: m.input_price_per_m,
+            output_price_per_m: m.output_price_per_m,
+            cache_enabled: m.cache_enabled,
+            cache_ttl: m.cache_ttl,
+            enabled: Boolean(m.enabled),
+            config_json: m.config_json,
+          });
+        }
+      }
+    }
+
+    // Restore settings
+    if (data.settings) {
+      if (data.settings.budget_config) await setSetting(env, "budget_config", data.settings.budget_config);
+      if (data.settings.webhook_config) await setSetting(env, "webhook_config", data.settings.webhook_config);
+      if (data.settings.ip_whitelist_config) await setSetting(env, "ip_whitelist_config", data.settings.ip_whitelist_config);
+    }
+
+    return { success: true, message: `已成功回滚至快照「${snap.name}」` };
+  } catch (err: any) {
+    return { success: false, message: `快照解析或恢复失败: ${err.message}` };
+  }
+}
+
+// ---------- Key Rotation & Lifecycle ----------
+
+export async function getKeyRotationReport(env: Env, recommendedDays = 90): Promise<KeyRotationReport> {
+  await ensureSchema(env);
+  const [providers, devices] = await Promise.all([
+    listProviders(env),
+    listDevices(env),
+  ]);
+
+  const nowMs = Date.now();
+  const DAY_MS = 86400000;
+  const items: KeyRotationItem[] = [];
+
+  for (const p of providers) {
+    const keyRefTime = p.updated_at || p.created_at || nowMs;
+    const ageDays = Math.max(0, Math.floor((nowMs - keyRefTime) / DAY_MS));
+    const status: "fresh" | "expiring_soon" | "expired" =
+      ageDays >= recommendedDays ? "expired" : ageDays >= recommendedDays - 30 ? "expiring_soon" : "fresh";
+    const keyHint = p.api_key ? `sk-...${p.api_key.slice(-4)}` : p.secret_name ? `Env: ${p.secret_name}` : "未配置";
+
+    items.push({
+      id: p.id,
+      name: `[Provider] ${p.name}`,
+      type: "provider",
+      key_hint: keyHint,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      age_days: ageDays,
+      status,
+      recommendation:
+        status === "expired"
+          ? `已使用 ${ageDays} 天，超过推荐的 ${recommendedDays} 天轮转周期，建议立即更换！`
+          : status === "expiring_soon"
+          ? `已使用 ${ageDays} 天，接近 ${recommendedDays} 天轮转周期，建议计划轮换。`
+          : `密钥状态良好（已使用 ${ageDays} 天）。`,
+    });
+  }
+
+  for (const d of devices) {
+    if (d.revoked_at) continue;
+    const refTime = d.created_at || nowMs;
+    const ageDays = Math.max(0, Math.floor((nowMs - refTime) / DAY_MS));
+    const status: "fresh" | "expiring_soon" | "expired" =
+      ageDays >= recommendedDays ? "expired" : ageDays >= recommendedDays - 30 ? "expiring_soon" : "fresh";
+
+    items.push({
+      id: d.id,
+      name: `[Device Token] ${d.name}`,
+      type: "device",
+      key_hint: `token_hash_${d.id.slice(0, 8)}`,
+      created_at: d.created_at,
+      age_days: ageDays,
+      status,
+      recommendation:
+        status === "expired"
+          ? `Token 已签发 ${ageDays} 天，建议重新签发并撤销旧 Token。`
+          : status === "expiring_soon"
+          ? `Token 已签发 ${ageDays} 天，建议在近期计划轮转。`
+          : `Token 状态良好（已使用 ${ageDays} 天）。`,
+    });
+  }
+
+  items.sort((a, b) => b.age_days - a.age_days);
+
+  return {
+    recommended_rotation_days: recommendedDays,
+    fresh_count: items.filter((i) => i.status === "fresh").length,
+    expiring_soon_count: items.filter((i) => i.status === "expiring_soon").length,
+    expired_count: items.filter((i) => i.status === "expired").length,
+    items,
+  };
+}
+
 

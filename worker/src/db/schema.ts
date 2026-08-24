@@ -84,7 +84,27 @@ export const INIT_STATEMENTS = [
     error_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (date, device_id, provider_id, model)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats (date)`
+  `CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats (date)`,
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_type TEXT NOT NULL DEFAULT 'admin',
+    ip TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    summary TEXT NOT NULL,
+    details_json TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at)`,
+  `CREATE TABLE IF NOT EXISTS config_snapshots (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    snapshot_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_config_snapshots_created_at ON config_snapshots (created_at)`
 ];
 
 const MIGRATION_ALTERS = [
@@ -103,6 +123,24 @@ const MIGRATION_ALTERS = [
   "CREATE INDEX IF NOT EXISTS idx_models_model_lookup ON models (model_name, enabled)",
   "CREATE INDEX IF NOT EXISTS idx_models_alias_lookup ON models (alias, enabled)",
   "CREATE INDEX IF NOT EXISTS idx_models_provider_id ON models (provider_id)",
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_type TEXT NOT NULL DEFAULT 'admin',
+    ip TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    summary TEXT NOT NULL,
+    details_json TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS config_snapshots (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    snapshot_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 let schemaInitialized = false;

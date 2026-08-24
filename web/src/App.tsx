@@ -10,6 +10,7 @@ import { Spinner } from "./components/ui";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ProvidersPage = lazy(() => import("./pages/ProvidersPage"));
 const ModelsPage = lazy(() => import("./pages/ModelsPage"));
+const PlaygroundPage = lazy(() => import("./pages/PlaygroundPage"));
 const DevicesPage = lazy(() => import("./pages/DevicesPage"));
 const UsagePage = lazy(() => import("./pages/UsagePage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/providers" element={<ProvidersPage />} />
                 <Route path="/models" element={<ModelsPage />} />
+                <Route path="/playground" element={<PlaygroundPage />} />
                 <Route path="/devices" element={<DevicesPage />} />
                 <Route path="/usage" element={<UsagePage />} />
                 <Route path="/settings" element={<SettingsPage />} />

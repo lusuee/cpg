@@ -175,3 +175,49 @@ export interface CostAnalytics {
   model_ranking: ModelSpendRankItem[];
 }
 
+export interface AuditLogRow {
+  id: number;
+  actor_type: string;
+  ip: string | null;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  summary: string;
+  details_json: string | null;
+  created_at: number;
+}
+
+export interface ConfigSnapshotRow {
+  id: string;
+  name: string;
+  description: string | null;
+  snapshot_json: string;
+  created_at: number;
+}
+
+export interface IpWhitelistConfig {
+  enabled: boolean;
+  allowed_ips: string[];
+}
+
+export interface KeyRotationItem {
+  id: string;
+  name: string;
+  type: "provider" | "device";
+  key_hint: string;
+  created_at: number;
+  updated_at?: number;
+  age_days: number;
+  status: "fresh" | "expiring_soon" | "expired";
+  recommendation: string;
+}
+
+export interface KeyRotationReport {
+  recommended_rotation_days: number;
+  fresh_count: number;
+  expiring_soon_count: number;
+  expired_count: number;
+  items: KeyRotationItem[];
+}
+
+

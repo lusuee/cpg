@@ -8,6 +8,8 @@ import { devicesApp } from "./devices";
 import { usageApp } from "./usage";
 import { settingsApp } from "./settings";
 import { cacheAdminApp } from "./cache";
+import { auditApp } from "./audit";
+import { playgroundApp } from "./playground";
 
 export const adminApp = new Hono<{ Bindings: Env }>();
 
@@ -25,3 +27,6 @@ adminApp.route("/devices", devicesApp);
 adminApp.route("/usage", usageApp);
 adminApp.route("/settings", settingsApp);
 adminApp.route("/cache", cacheAdminApp);
+adminApp.route("/audit-logs", auditApp);
+adminApp.route("/playground", playgroundApp);
+

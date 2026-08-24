@@ -178,6 +178,16 @@ providersApp.post("/", zValidator("json", CreateProviderSchema), async (c) => {
     enabled: data.enabled !== undefined ? data.enabled : true,
     config_json: data.config_json ? data.config_json.trim() : undefined,
   });
+  const { extractClientIp } = await import("../middleware/adminAuth");
+  const { recordAuditLog } = await import("../db/repo");
+  await recordAuditLog(c.env, {
+    ip: extractClientIp(c),
+    action: "provider.create",
+    target_type: "provider",
+    target_id: row.id,
+    summary: `创建 Provider「${row.name}」(${row.type})`,
+    details: { id: row.id, name: row.name, type: row.type },
+  });
   return c.json({ item: publicProvider(row, c.env) }, 201);
 });
 
@@ -194,7 +204,51 @@ providersApp.put("/:id", zValidator("json", UpdateProviderSchema), async (c) => 
     config_json: data.config_json !== undefined ? (data.config_json ? data.config_json.trim() : null) : undefined,
   });
   if (!row) return c.json({ error: "not_found" }, 404);
+
+  const { extractClientIp } = await import("../middleware/adminAuth");
+  const { recordAuditLog } = await import("../db/repo");
+  await recordAuditLog(c.env, {
+    ip: extractClientIp(c),
+    action: "provider.update",
+    target_type: "provider",
+    target_id: row.id,
+    summary: `更新 Provider「${row.name}」`,
+    details: { id: row.id, name: row.name, enabled: row.enabled },
+  });
+
   return c.json({ item: publicProvider(row, c.env) });
+});
+
+providersApp.post("/:id/rotate-key", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) as { api_key?: string; secret_name?: string };
+  const p = await getProvider(c.env, id);
+  if (!p) return c.json({ error: "provider_not_found" }, 404);
+
+  const newKey = body.api_key ? body.api_key.trim() : null;
+  const newSecret = body.secret_name ? body.secret_name.trim() : null;
+
+  if (!newKey && !newSecret) {
+    return c.json({ error: "key_required", message: "请输入新的 API Key 或环境变量 Secret 名称" }, 400);
+  }
+
+  const row = await updateProvider(c.env, id, {
+    api_key: newKey,
+    secret_name: newSecret,
+  });
+
+  const { extractClientIp } = await import("../middleware/adminAuth");
+  const { recordAuditLog } = await import("../db/repo");
+  await recordAuditLog(c.env, {
+    ip: extractClientIp(c),
+    action: "provider.rotate_key",
+    target_type: "provider",
+    target_id: id,
+    summary: `轮换 Provider「${p.name}」的 API 密钥`,
+    details: { id, name: p.name, rotated_at: Date.now() },
+  });
+
+  return c.json({ ok: true, item: row ? publicProvider(row, c.env) : null });
 });
 
 providersApp.post("/batch-update", zValidator("json", BatchUpdateProvidersSchema), async (c) => {
@@ -210,8 +264,22 @@ providersApp.post("/batch-delete", zValidator("json", BatchDeleteProvidersSchema
 });
 
 providersApp.delete("/:id", async (c) => {
-  const ok = await deleteProvider(c.env, c.req.param("id"));
+  const id = c.req.param("id");
+  const p = await getProvider(c.env, id);
+  const ok = await deleteProvider(c.env, id);
   if (!ok) return c.json({ error: "provider_has_models", message: "请先删除该 provider 下的 models" }, 409);
+
+  const { extractClientIp } = await import("../middleware/adminAuth");
+  const { recordAuditLog } = await import("../db/repo");
+  await recordAuditLog(c.env, {
+    ip: extractClientIp(c),
+    action: "provider.delete",
+    target_type: "provider",
+    target_id: id,
+    summary: `删除 Provider「${p?.name || id}」`,
+    details: { id, name: p?.name },
+  });
+
   return c.json({ ok: true });
 });
 
